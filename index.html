@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f8fb">
+    <meta name="description" content="A personal AI learning companion that helps you learn Python one step at a time.">
+    <title>Orbit — Learn at your own pace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="capacitor.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <section class="onboarding-screen" id="onboarding-screen" hidden aria-labelledby="onboarding-title">
+      <header class="onboarding-topbar">
+        <a class="brand onboarding-brand" href="#" aria-label="Orbit home">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>orbit<span class="brand-period">.</span></span>
+        </a>
+        <span class="onboarding-note"><span aria-hidden="true">✦</span> YOUR PATH, YOUR PACE</span>
+        <button class="onboarding-cancel backend-config-onboarding" id="backend-config-onboarding" type="button">Connect server</button>
+        <button class="onboarding-cancel" id="onboarding-cancel" type="button" hidden>Back to my path</button>
+      </header>
+      <main class="onboarding-main">
+        <div class="onboarding-progress-wrap">
+          <button class="onboarding-back" id="onboarding-back" type="button" aria-label="Go to previous question" hidden>←</button>
+          <div class="onboarding-progress" aria-label="Setup progress"><span id="onboarding-progress-bar"></span></div>
+          <span class="onboarding-step-count" id="onboarding-step-count">1 / 5</span>
+        </div>
+        <div class="onboarding-mascot" aria-hidden="true"><span class="mascot-orbit"></span><span class="mascot-spark">✦</span><span class="mascot-face"><i></i><i></i><b></b></span></div>
+        <div class="onboarding-content" id="onboarding-content" aria-live="polite"></div>
+        <div class="onboarding-actions" id="onboarding-actions"></div>
+        <p class="onboarding-privacy">No account needed to start. Sign in later to back up your learning to the cloud.</p>
+      </main>
+      <footer class="onboarding-footer"><span>LEARN A LITTLE. GROW A LOT.</span><span>✦ &nbsp;Small steps count.</span></footer>
+      <nav class="site-legal-links onboarding-legal-links" aria-label="Company pages">
+        <a href="/pricing">Pricing</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/refund-policy">Refund policy</a>
+        <a href="/contact">Contact</a>
+      </nav>
+    </section>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <a class="brand" href="#" data-view="dashboard" aria-label="Orbit home">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>orbit<span class="brand-period">.</span></span>
+        </a>
+
+        <div class="sidebar-label">WORKSPACE</div>
+        <nav class="primary-nav">
+          <button class="nav-link is-active" data-view="dashboard"><span class="nav-icon icon-home" aria-hidden="true"></span>Overview</button>
+          <button class="nav-link" data-view="lesson"><span class="nav-icon icon-book" aria-hidden="true"></span>My learning</button>
+          <button class="nav-link" data-view="roadmap"><span class="nav-icon icon-map" aria-hidden="true"></span>Learning path</button>
+        </nav>
+
+        <div class="sidebar-label skills-label">YOUR SKILLS <button class="tiny-add" type="button" aria-label="Add a skill" title="More skills coming soon">+</button></div>
+        <button class="skill-link is-selected" data-view="lesson">
+          <span class="skill-icon python-icon">Py</span>
+          <span class="skill-link-copy"><strong>Python</strong><small>Beginner path</small></span>
+          <span class="skill-status" aria-label="In progress"></span>
+        </button>
+
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-help">
+          <div class="help-orbit" aria-hidden="true">✦</div>
+          <strong>A little progress<br>goes a long way.</strong>
+          <span>Keep showing up. You’re doing great.</span>
+        </div>
+        <button class="profile-button" type="button" aria-label="Learner profile">
+          <span class="avatar">Y</span>
+          <span class="profile-copy"><strong>Your learning space</strong><small>Free plan</small></span>
+          <span class="profile-more" aria-hidden="true">···</span>
+        </button>
+        <nav class="site-legal-links" aria-label="Company pages">
+          <a href="/pricing">Pricing</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/refund-policy">Refunds</a>
+          <a href="/contact">Contact</a>
+        </nav>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="breadcrumb"><span>Workspace</span><span class="crumb-slash">/</span><strong id="page-label">Overview</strong></div>
+          <div class="topbar-actions">
+            <div class="streak-pill" title="Learning streak"><span class="streak-flame" aria-hidden="true">✳</span><strong id="streak-count">0</strong><span>day streak</span></div>
+            <div class="xp-pill" title="Experience points"><span aria-hidden="true">✦</span><strong id="xp-count">0</strong><span>XP</span></div>
+            <div class="ai-status-pill" id="ai-status-pill" title="Cloud AI status"><i></i><span id="ai-status-text">Checking AI…</span></div>
+            <button class="icon-button backend-config-open" id="backend-config-open" type="button" aria-label="Configure AI server" title="Configure AI server">⚙</button>
+            <button class="icon-button notification-button" type="button" aria-label="Notifications"><span aria-hidden="true">♧</span><i></i></button>
+            <button class="avatar top-avatar account-open" id="account-open" type="button" aria-label="Account and sync">Y</button>
+          </div>
+        </header>
+
+        <section class="view is-visible" id="dashboard-view" aria-labelledby="welcome-title">
+          <div class="welcome-row">
+            <div>
+              <p class="eyebrow"><span class="eyebrow-dot"></span> YOUR PERSONAL LEARNING SPACE</p>
+              <h1 id="welcome-title">Ready for your <span>next small win?</span></h1>
+              <p class="welcome-subtitle" id="welcome-subtitle">Your goals, your pace. Let’s make a little progress today.</p>
+            </div>
+            <div class="welcome-art" aria-hidden="true">
+              <div class="art-sun"></div><div class="art-ring ring-one"></div><div class="art-ring ring-two"></div>
+              <div class="art-star star-one">✳</div><div class="art-star star-two">✦</div><div class="art-dash"></div>
+            </div>
+          </div>
+
+          <div class="section-heading">
+            <div><h2>Your learning journey</h2><p id="journey-subtitle">Pick up right where you left off.</p></div>
+            <button class="text-button" data-view="roadmap">View learning path <span aria-hidden="true">→</span></button>
+          </div>
+
+          <article class="continue-card">
+            <div class="continue-visual" aria-hidden="true">
+              <div class="visual-glow"></div><div class="visual-window"><div class="window-top"><i></i><i></i><i></i><b>hello.py</b></div><div class="window-code"><span class="code-muted">01</span> <span class="code-purple">name</span> <span class="code-white">=</span><br><span class="code-muted">02</span> <span class="code-green">"your next idea"</span></div></div>
+              <span class="preview-art-label" id="preview-art-label"></span>
+              <span class="visual-spark spark-a">✦</span><span class="visual-spark spark-b">✳</span>
+            </div>
+            <div class="continue-info">
+              <div class="card-kicker"><span class="python-icon small-python" id="course-icon">Py</span> <span id="course-kicker">PYTHON FOR BEGINNERS</span> <span class="kicker-dot">·</span> YOUR NEXT STEP</div>
+              <h3 id="lesson-card-title">The building blocks: variables</h3>
+              <p id="lesson-card-description">Learn how to give information a name and use it in your code.</p>
+              <div class="lesson-meta"><span><span class="meta-clock" aria-hidden="true">◷</span> 8 min</span><span class="meta-divider"></span><span id="lesson-card-status">Ready when you are</span></div>
+              <button class="button button-primary" id="continue-learning" data-view="lesson"><span id="continue-button-text">Start learning</span><span aria-hidden="true">→</span></button>
+            </div>
+            <div class="continue-progress"><span class="progress-label">YOUR PROGRESS</span><strong><span id="mastery-value">0</span><small>%</small></strong><div class="progress-track"><span id="mastery-bar"></span></div><span class="progress-caption" id="mastery-caption">A fresh start</span></div>
+          </article>
+
+          <div class="dashboard-bottom">
+            <section class="journey-panel">
+              <div class="section-heading compact-heading"><div><h2>Your roadmap</h2><p>One small step at a time.</p></div><button class="arrow-button" data-view="roadmap" aria-label="View full learning path">→</button></div>
+              <div class="roadmap-preview">
+                <div class="roadmap-line"></div>
+                <div class="roadmap-preview-list" id="roadmap-preview-list"></div>
+                <small class="roadmap-preview-more" id="roadmap-preview-more"></small>
+              </div>
+            </section>
+
+            <section class="stats-panel">
+              <div class="section-heading compact-heading"><div><h2>Your momentum</h2><p>Every session adds up.</p></div><span class="stats-spark" aria-hidden="true">✳</span></div>
+              <div class="stat-grid">
+                <div class="stat-card"><span class="stat-icon stat-time" aria-hidden="true">◷</span><strong id="minutes-stat">0 <small>min</small></strong><span>Time learning</span></div>
+                <div class="stat-card"><span class="stat-icon stat-check" aria-hidden="true">✓</span><strong id="concepts-stat">0 <small>/ 20</small></strong><span>Concepts mastered</span></div>
+              </div>
+              <div class="momentum-note"><span class="note-spark">✦</span><span id="daily-goal-note">Your daily goal is a small, doable <strong>step forward.</strong></span></div>
+            </section>
+          </div>
+          <p class="prototype-note"><span id="storage-note">Your learning progress stays in this browser on this device.</span> <span class="curriculum-depth-note" id="curriculum-depth-note" hidden>Your saved path is a short starter plan. Expand it to build the full 40+ lesson curriculum.</span> <button class="edit-plan-button" id="edit-plan" type="button">Update my learning plan</button></p>
+        </section>
+
+        <section class="view lesson-view" id="lesson-view" aria-labelledby="lesson-title" hidden>
+          <div class="lesson-heading">
+            <button class="back-link" data-view="dashboard"><span aria-hidden="true">←</span> Overview</button>
+            <div class="lesson-heading-main"><span class="lesson-course-tag"><span class="python-icon small-python" id="lesson-course-icon">Py</span> <span id="lesson-course-name">PYTHON</span></span><h1 id="lesson-title">Your first lesson</h1><p id="lesson-subtitle">Concept 1 · Learn at your own pace</p></div>
+            <div class="lesson-heading-progress"><span>CONCEPT MASTERY</span><strong id="lesson-mastery">0%</strong><div class="progress-track"><span id="lesson-progress-bar"></span></div></div>
+          </div>
+          <div class="learning-layout">
+            <section class="tutor-panel" aria-label="Tutor conversation">
+              <div class="tutor-topbar"><div class="tutor-identity"><span class="tutor-avatar"><span class="orbit-buddy" aria-hidden="true"><i class="buddy-wing"></i><i class="buddy-eye buddy-eye-left"></i><i class="buddy-eye buddy-eye-right"></i><i class="buddy-smile"></i><i class="buddy-shine"></i></span></span><span><strong>Your learning guide</strong><small><i></i><span id="tutor-presence">Here to help, always</span></small></span></div><span class="guided-label"><span aria-hidden="true">✦</span> GUIDED LESSON</span></div>
+              <div class="lesson-rail" aria-label="Lesson sections">
+                <div class="lesson-rail-step is-active" data-lesson-stage="learn"><span>01</span> Learn</div>
+                <div class="lesson-rail-connector"></div>
+                <div class="lesson-rail-step" data-lesson-stage="practice"><span>02</span> Practice</div>
+                <div class="lesson-rail-connector"></div>
+                <div class="lesson-rail-step" data-lesson-stage="mastery"><span>03</span> Mastery</div>
+              </div>
+              <div class="lesson-guide-stage" id="lesson-guide-stage">
+                <span class="stage-mascot" role="img" aria-label="Orbit, your learning companion"><span class="orbit-buddy" aria-hidden="true"><i class="buddy-wing"></i><i class="buddy-eye buddy-eye-left"></i><i class="buddy-eye buddy-eye-right"></i><i class="buddy-smile"></i><i class="buddy-shine"></i></span><i class="mascot-shadow"></i><i class="mascot-orbit-ring"></i></span>
+                <div class="stage-guide-copy"><span>YOUR ORBIT GUIDE</span><strong id="stage-guide-title">Ready to learn?</strong><p id="stage-guide-message">One step at a time. You’ve got this!</p></div>
+                <span class="stage-guide-spark" aria-hidden="true">✦</span>
+              </div>
+              <div class="chat-messages" id="chat-messages" aria-live="polite" aria-relevant="additions"></div>
+              <div class="chat-composer">
+                <label class="sr-only" for="answer-input">Your answer</label>
+                <textarea id="answer-input" rows="2" placeholder="Type your answer here..." maxlength="2000"></textarea>
+                <div class="composer-footer"><span id="composer-hint">No rush — think it through.</span><button class="send-button" id="send-answer" type="button" aria-label="Send answer"><span>Send</span><span aria-hidden="true">↑</span></button></div>
+              </div>
+              <button class="lesson-next" id="lesson-next" type="button" hidden>Continue to next lesson <span aria-hidden="true">→</span></button>
+              <div class="tutor-footnote"><span aria-hidden="true">✳</span> Your guide will adapt as you learn.</div>
+            </section>
+            <aside class="lesson-side">
+              <section class="side-card concept-card"><div class="side-card-heading"><span class="side-card-icon" aria-hidden="true">✦</span><span>IN THIS LESSON</span></div><h2 id="concept-title">Your first concept</h2><p id="concept-objective">Your AI tutor will tailor this explanation to you.</p><div class="concept-exercise"><span>TRY THIS</span><p id="concept-exercise">Your AI tutor will suggest a small practice task.</p></div></section>
+              <section class="side-card session-card"><div class="side-card-heading"><span class="side-card-icon check-side" aria-hidden="true">✓</span><span>YOUR LESSON</span></div><div class="session-progress-copy"><strong id="session-step-title">Learn the idea</strong><span id="session-step-count">STEP 1 OF 3</span></div><div class="session-steps" aria-label="Lesson steps"><span class="session-step is-active" id="step-dot-1"></span><span class="session-step" id="step-dot-2"></span><span class="session-step" id="step-dot-3"></span></div><p id="session-step-description">Learn one idea, practice it, then show what you know.</p></section>
+              <button class="exit-lesson" data-view="dashboard"><span aria-hidden="true">←</span> Save &amp; come back later</button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view roadmap-view" id="roadmap-view" aria-labelledby="roadmap-title" hidden>
+          <div class="roadmap-header"><p class="eyebrow"><span class="eyebrow-dot"></span> YOUR PERSONAL LEARNING PATH</p><h1 id="roadmap-title">Your next steps.</h1><p id="roadmap-description">A path designed around what you want to learn.</p></div>
+          <div class="path-overview-card"><div class="path-icon python-icon" id="path-course-icon">Py</div><div><span class="progress-label">YOUR CURRENT PATH</span><h2 id="path-course-name">Python · Beginner</h2><p id="path-course-details">20 bite-sized concepts · Learn on your schedule</p></div><div class="path-total-progress"><strong><span id="path-progress">0</span>%</strong><span>overall progress</span></div></div>
+          <div class="phase-list" id="phase-list"></div>
+          <button class="button button-primary roadmap-continue" data-view="lesson">Continue learning <span aria-hidden="true">→</span></button>
+        </section>
+      </main>
+    </div>
+    <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title">
+      <button class="account-close" id="account-close" type="button" aria-label="Close account window">×</button>
+      <div class="account-dialog-heading">
+        <span class="account-mark" aria-hidden="true">✦</span>
+        <p class="eyebrow"><span class="eyebrow-dot"></span> YOUR LEARNING, SAVED</p>
+        <h2 id="account-title">Sync your learning</h2>
+        <p id="account-description">Create an account to keep your roadmap and progress safe across devices.</p>
+      </div>
+      <div class="account-signed-out" id="account-signed-out">
+        <button class="button button-google" id="account-google" type="button"><span class="google-g" aria-hidden="true">G</span> Continue with Google</button>
+        <p class="account-divider"><span>or use email</span></p>
+        <div class="account-mode-switch" role="group" aria-label="Account action">
+          <button type="button" class="is-selected" data-account-mode="signup">Create account</button>
+          <button type="button" data-account-mode="login">Sign in</button>
+        </div>
+        <form id="account-form">
+          <label for="account-email">Email</label>
+          <input id="account-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+          <label for="account-password">Password</label>
+          <input id="account-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+          <button class="button button-primary account-submit" id="account-submit" type="submit">Create account</button>
+        </form>
+      </div>
+      <div class="account-signed-in" id="account-signed-in" hidden>
+        <p>Signed in as <strong id="account-email-label"></strong></p>
+        <p class="cloud-sync-state"><span aria-hidden="true">✓</span> Your learning progress syncs automatically.</p>
+        <p class="account-plan-state" id="account-plan-state">Free plan</p>
+        <div class="backend-actions">
+          <button class="button button-primary account-submit" id="account-upgrade" type="button">Upgrade to Pro</button>
+          <button class="backend-clear account-signout" id="account-signout" type="button">Sign out</button>
+        </div>
+      </div>
+      <p class="account-message" id="account-message" role="status" aria-live="polite"></p>
+    </dialog>
+    <dialog class="account-dialog plans-dialog" id="plans-dialog" aria-labelledby="plans-title">
+      <button class="account-close" id="plans-close" type="button" aria-label="Close plans window">×</button>
+      <div class="account-dialog-heading">
+        <span class="account-mark" aria-hidden="true">◆</span>
+        <p class="eyebrow"><span class="eyebrow-dot"></span> ORBIT PRO</p>
+        <h2 id="plans-title">Keep learning without the daily cap</h2>
+        <p>The free plan teaches with a lighter model and a limited number of AI requests each day. Pro uses a stronger tutor model and gives you far more room.</p>
+      </div>
+      <div class="plan-list" id="plan-list"></div>
+      <p class="plan-current" id="plan-current"></p>
+      <p class="account-message" id="plans-message" role="status" aria-live="polite"></p>
+      <p class="backend-help">Payment is handled by Razorpay—cards, UPI, wallets, net banking. Prices are in Indian rupees and your plan activates as soon as the payment is confirmed. Plans do not renew automatically. By paying you accept our <a class="legal-inline-link" href="/terms" target="_blank" rel="noopener">Terms</a> and the <a class="legal-inline-link" href="/refund-policy" target="_blank" rel="noopener">refund policy</a>.</p>
+    </dialog>
+    <dialog class="account-dialog backend-dialog" id="backend-dialog" aria-labelledby="backend-title">
+      <button class="account-close" id="backend-close" type="button" aria-label="Close server settings">×</button>
+      <div class="account-dialog-heading">
+        <span class="account-mark" aria-hidden="true">↗</span>
+        <p class="eyebrow"><span class="eyebrow-dot"></span> MOBILE APP CONNECTION</p>
+        <h2 id="backend-title">Connect Orbit to a server</h2>
+        <p>The APK keeps your learning screens on your phone. Add your own HTTPS Orbit backend when it is ready. Never put AI or Supabase secret keys in the APK.</p>
+      </div>
+      <form id="backend-form">
+        <label for="backend-url">Orbit backend URL</label>
+        <input id="backend-url" name="backend-url" type="url" inputmode="url" autocomplete="url" placeholder="https://your-orbit-server.example" maxlength="300">
+        <p class="backend-help">Use the base URL of a backend you trust. This setting stores the URL only—not API keys.</p>
+        <div class="backend-actions">
+          <button class="button button-primary account-submit" type="submit">Save server</button>
+          <button class="backend-clear" id="backend-clear" type="button">Clear URL</button>
+        </div>
+        <p class="account-message" id="backend-message" role="status"></p>
+      </form>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

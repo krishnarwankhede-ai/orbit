@@ -1,0 +1,62 @@
+services:
+  - type: web
+    name: orbit-learning-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: AI_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_FREE_MODEL
+        value: openai/gpt-4.1-mini
+      - key: OPENROUTER_PAID_MODEL
+        value: anthropic/claude-sonnet-4.5
+      - key: AI_FALLBACK_PROVIDERS
+        value: gemini,openai,anthropic
+      - key: FREE_DAILY_TUTOR_CALLS
+        value: "40"
+      - key: FREE_DAILY_ROADMAPS
+        value: "2"
+      - key: PAID_EMAILS
+        value: ""
+      - key: ORBIT_BUSINESS_NAME
+        sync: false
+      - key: ORBIT_SUPPORT_EMAIL
+        sync: false
+      - key: ORBIT_SUPPORT_PHONE
+        sync: false
+      - key: ORBIT_BUSINESS_ADDRESS
+        sync: false
+      - key: ORBIT_LEGAL_DATE
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: ORBIT_ALLOWED_ORIGINS
+        value: https://localhost,capacitor://localhost

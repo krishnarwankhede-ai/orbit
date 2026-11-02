@@ -1,0 +1,9 @@
+{
+  "appId": "com.orbit.learning",
+  "appName": "Orbit Learning",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#f7f8fb",
+    "allowMixedContent": false
+  }
+}

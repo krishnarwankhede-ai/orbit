@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Orbit pricing: a free plan to start, and Pro monthly, yearly or lifetime for learners who want more every day.">
+    <title>Pricing — Orbit</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="legal-body">
+    <header class="legal-topbar">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>orbit<span class="brand-period">.</span></span></a>
+      <nav class="legal-nav" aria-label="Site pages">
+        <a href="/pricing" aria-current="page">Pricing</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/refund-policy">Refunds</a>
+        <a href="/contact">Contact</a>
+      </nav>
+    </header>
+
+    <main class="legal-page">
+      {{config_warning}}
+      <p class="eyebrow"><span class="eyebrow-dot"></span> PRICING</p>
+      <h1>Start free. Upgrade only when the daily cap bothers you.</h1>
+      <p class="legal-updated">Prices in Indian rupees, last updated {{effective_date}}. The amount below is the exact amount charged — there is no automatic renewal.</p>
+
+      <p>Every AI lesson costs us money, so the free plan has a daily limit and Pro has a much larger one. Nothing else is hidden: same tutor, same paths, same progress tracking.</p>
+
+      <h2>Plans</h2>
+      <table class="legal-table">
+        <thead><tr><th>Plan</th><th>Price</th><th>Active until</th><th>Best for</th></tr></thead>
+        <tbody>
+{{plan_rows}}
+        </tbody>
+      </table>
+      <p class="legal-note">Yearly works out to a little over ₹8 a day — roughly six months of the monthly price. Lifetime is a single payment that stays active on your account for as long as Orbit exists.</p>
+
+      <h2>What you get</h2>
+      <table class="legal-table">
+        <thead><tr><th></th><th>Free</th><th>Pro</th></tr></thead>
+        <tbody>
+          <tr><td>Interactive tutor that teaches, quizzes and adapts</td><td>Yes</td><td>Yes</td></tr>
+          <tr><td>Personalised learning path for a new skill</td><td>Yes</td><td>Yes</td></tr>
+          <tr><td>Progress, streak and mastery tracking, synced to your account</td><td>Yes</td><td>Yes</td></tr>
+          <tr><td>Tutor requests per day</td><td>{{free_tutor_calls}}</td><td>{{paid_tutor_calls}}</td></tr>
+          <tr><td>New learning paths per day</td><td>{{free_roadmaps}}</td><td>{{paid_roadmaps}}</td></tr>
+          <tr><td>Tutor model</td><td>Lighter, faster</td><td>Stronger teaching and code review</td></tr>
+          <tr><td>Ads, and selling your data</td><td>Never</td><td>Never</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Common questions</h2>
+      <h3>Will it renew by itself?</h3>
+      <p>No. Monthly and yearly are single payments. When the period ends you go back to the free plan and decide whether to buy again. See the <a href="/refund-policy">cancellation and refund policy</a>.</p>
+      <h3>Can I get my money back?</h3>
+      <p>Yes — full refund within 7 days of paying, no questions asked, and also if you were charged but the plan did not activate.</p>
+      <h3>Do I need an account to try it?</h3>
+      <p>No. You can start a lesson immediately; an account is only needed to back your progress up to the cloud and to hold a paid plan.</p>
+      <h3>How do I pay?</h3>
+      <p>Through Razorpay: UPI, credit and debit cards, net banking and popular wallets. Orbit never sees or stores your card number or UPI PIN.</p>
+      <h3>What happens if I hit the free limit?</h3>
+      <p>The app tells you the limit is reached and resets tomorrow. Your progress is not lost, and lessons already built keep working.</p>
+
+      <p class="legal-cta"><a class="button button-primary" href="/">Open Orbit and choose a plan</a></p>
+
+      <p class="legal-note">By paying you agree to the <a href="/terms">Terms of Service</a>. This page, the <a href="/privacy">privacy policy</a> and the <a href="/refund-policy">refund policy</a> are the full commercial terms of the service.</p>
+    </main>
+
+    <footer class="legal-footer">
+      <p>{{business_name}} · {{support_email}}</p>
+      <nav class="legal-nav" aria-label="Footer pages">
+        <a href="/pricing">Pricing</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/refund-policy">Refund policy</a>
+        <a href="/contact">Contact</a>
+      </nav>
+    </footer>
+  </body>
+</html>

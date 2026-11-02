@@ -1,0 +1,93 @@
+"use strict";
+
+// Offline checks for the public policy pages Razorpay's reviewers open: /pricing, /privacy,
+// /terms, /refund-policy, /contact. Nothing here calls out to the internet.
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const PORT = 3179;
+
+process.env.PORT = String(PORT);
+process.env.ORBIT_BUSINESS_NAME = "Orbit Learning Studio";
+process.env.ORBIT_SUPPORT_EMAIL = "help@orbit-learning.test";
+process.env.ORBIT_GRIEVANCE_EMAIL = "grievance@orbit-learning.test";
+process.env.ORBIT_SUPPORT_PHONE = "+91 90000 00000";
+process.env.ORBIT_BUSINESS_ADDRESS = "22 Sample Road, Pune 411001, India";
+process.env.ORBIT_SITE_URL = "https://orbit-review.test";
+process.env.ORBIT_LEGAL_DATE = "2 November 2026";
+
+const { server, billingPlans } = require("../server.js");
+
+const PAGES = ["/pricing", "/privacy", "/terms", "/refund-policy", "/contact"];
+
+async function getPage(pathname) {
+  const response = await fetch(`http://127.0.0.1:${PORT}${pathname}`);
+  return { status: response.status, type: response.headers.get("content-type") || "", body: await response.text() };
+}
+
+async function main() {
+  await new Promise((resolve) => server.listen(PORT, "127.0.0.1", resolve));
+  try {
+    const indexHtml = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+    for (const pathname of PAGES) {
+      assert.ok(indexHtml.includes(`href="${pathname}"`), `${pathname} is reachable from the app itself`);
+    }
+
+    for (const pathname of PAGES) {
+      const page = await getPage(pathname);
+      assert.equal(page.status, 200, `${pathname} serves`);
+      assert.ok(page.type.startsWith("text/html"), `${pathname} is a page, not JSON`);
+      assert.ok(!page.body.includes("{{"), `${pathname} has no unfilled placeholder`);
+      assert.ok(page.body.includes("Orbit Learning Studio"), `${pathname} shows the business name`);
+      assert.ok(page.body.includes("help@orbit-learning.test"), `${pathname} shows a working contact address`);
+      assert.ok(!page.body.includes("legal-warning"), `${pathname} is publishable when the details are set`);
+      for (const other of PAGES) {
+        if (other !== pathname) assert.ok(page.body.includes(`href="${other}"`), `${pathname} links to ${other}`);
+      }
+    }
+
+    const pricing = await getPage("/pricing");
+    for (const plan of Object.values(billingPlans)) {
+      const shown = `₹${(plan.amountPaise / 100).toLocaleString("en-IN")}`;
+      assert.ok(pricing.body.includes(shown), `the pricing page quotes the real ${shown} price`);
+      assert.ok(pricing.body.includes(plan.label), `the pricing page names the ${plan.label} plan`);
+    }
+    assert.ok(pricing.body.includes("no automatic renewal"), "the pricing page is honest about renewal");
+    assert.ok(pricing.body.includes("40"), "the free plan's daily tutor limit is published");
+
+    const terms = await getPage("/terms");
+    assert.ok(terms.body.includes("There is no automatic renewal"), "the terms state the real billing behaviour");
+    assert.ok(terms.body.includes("/refund-policy"), "the terms point at the refund policy");
+
+    const refund = await getPage("/refund-policy");
+    for (const phrase of ["7 days", "5 working days", "original payment method", "Grievance redressal"]) {
+      assert.ok(refund.body.includes(phrase), `the refund policy covers ${phrase}`);
+    }
+
+    const styles = await fetch(`http://127.0.0.1:${PORT}/styles.css`);
+    assert.equal(styles.status, 200, "the shared stylesheet is still served");
+    const css = await styles.text();
+    assert.ok(css.includes(".legal-page"), "the legal pages have styling");
+
+    const missing = await fetch(`http://127.0.0.1:${PORT}/nowhere`);
+    assert.equal(missing.status, 404, "an unknown path is still a 404");
+
+    process.env.ORBIT_SUPPORT_EMAIL = "";
+    process.env.ORBIT_BUSINESS_NAME = "";
+    const unpublished = await getPage("/contact");
+    assert.equal(unpublished.status, 200, "the contact page still serves without business details");
+    assert.ok(unpublished.body.includes("Not ready to publish"), "a missing business email is flagged instead of faked");
+    assert.ok(unpublished.body.includes("ORBIT_SUPPORT_EMAIL"), "the flag names the variable to set");
+    assert.ok(!unpublished.body.includes("{{"), "no placeholder leaks when the details are missing");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+  console.log("Legal checks passed: five public pages, real prices, cross-links, contact details and the publish guard.");
+}
+
+main().catch((error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});

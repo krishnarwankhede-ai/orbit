@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Contact Orbit: support email, grievance contact, phone and registered business address.">
+    <title>Contact Us — Orbit</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="legal-body">
+    <header class="legal-topbar">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>orbit<span class="brand-period">.</span></span></a>
+      <nav class="legal-nav" aria-label="Site pages">
+        <a href="/pricing">Pricing</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/refund-policy">Refunds</a>
+        <a href="/contact" aria-current="page">Contact</a>
+      </nav>
+    </header>
+
+    <main class="legal-page">
+      {{config_warning}}
+      <p class="eyebrow"><span class="eyebrow-dot"></span> CONTACT</p>
+      <h1>Talk to a human</h1>
+      <p class="legal-updated">Operated by {{business_name}} · {{site_link}}</p>
+
+      <table class="legal-table">
+        <thead><tr><th>What you need</th><th>Where to write</th></tr></thead>
+        <tbody>
+          <tr><td>General help, sign-in, a lesson that misbehaved</td><td>{{support_email}}</td></tr>
+          <tr><td>Refund request (include the Razorpay payment id)</td><td>{{support_email}}</td></tr>
+          <tr><td>Data access, correction or account deletion</td><td>{{support_email}}</td></tr>
+          <tr><td>Complaint that was not resolved (grievance officer)</td><td>{{grievance_email}}</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Registered business details</h2>
+      <table class="legal-table">
+        <tbody>
+          <tr><td>Legal entity</td><td>{{business_name}}</td></tr>
+          <tr><td>Registered address</td><td>{{address}}</td></tr>
+          <tr><td>Phone</td><td>{{phone}}</td></tr>
+          <tr><td>Support email</td><td>{{support_email}}</td></tr>
+          <tr><td>Grievance email</td><td>{{grievance_email}}</td></tr>
+          <tr><td>Hours</td><td>Monday to Saturday, 10:00–18:00 IST</td></tr>
+        </tbody>
+      </table>
+
+      <h2>How fast we reply</h2>
+      <p>We acknowledge every email within 48 hours and normally resolve it within 15 days. Refunds we approve are processed within 5 working days; the bank may then take another 5–10 days to show the money.</p>
+
+      <h2>Before you write</h2>
+      <ul>
+        <li><strong>Payment problem?</strong> Include the plan, the date, and the Razorpay payment or order id from your bank SMS or statement — that is what lets us find the transaction.</li>
+        <li><strong>Account problem?</strong> Email us from the address you registered with, so we can be sure it is your account.</li>
+        <li><strong>Hit your daily limit?</strong> That is the free plan working as designed; it resets the next day, and the <a href="/pricing">pricing page</a> explains Pro.</li>
+        <li><strong>Something wrong in a lesson?</strong> Paste the exact lesson and what the tutor said. We read those.</li>
+      </ul>
+
+      <p class="legal-note">Our commercial terms are on the <a href="/terms">Terms of Service</a>, <a href="/privacy">Privacy Policy</a> and <a href="/refund-policy">Cancellation &amp; Refund Policy</a> pages.</p>
+    </main>
+
+    <footer class="legal-footer">
+      <p>{{business_name}} · {{support_email}}</p>
+      <nav class="legal-nav" aria-label="Footer pages">
+        <a href="/pricing">Pricing</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/refund-policy">Refund policy</a>
+        <a href="/contact">Contact</a>
+      </nav>
+    </footer>
+  </body>
+</html>
