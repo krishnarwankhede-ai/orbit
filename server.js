@@ -453,12 +453,12 @@ const providerConfigs = {
     label: "OpenRouter",
     keyEnvs: ["OPENROUTER_API_KEY"],
     envPrefix: "OPENROUTER",
-    defaultModel: "openai/gpt-4.1-nano",
-    // One gateway, two tiers: gpt-4.1-nano is the cheapest model that never spends hidden
-    // reasoning tokens, so the free plan cannot truncate its own JSON. DeepSeek v4-flash is
-    // ₹0.44 per topic against Claude's ₹0.72 for the same teaching quality, and reasoning is
-    // switched off in callOpenRouter because a reasoning model would eat max_tokens silently.
-    tierModels: { free: "openai/gpt-4.1-nano", paid: "deepseek/deepseek-v4-flash" }
+    defaultModel: "deepseek/deepseek-v4-flash",
+    // Measured on live topics, v4-flash costs ₹0.06-0.14 per topic against gpt-4.1-nano's ₹0.09-0.23
+    // and writes a 6-section lesson where nano writes 3, so both plans teach with it and the plans
+    // differ only in how much a learner can study per day (15 calls free, 120 paid). Reasoning is
+    // switched off in callOpenRouter because thinking tokens would eat max_tokens silently.
+    tierModels: { free: "deepseek/deepseek-v4-flash", paid: "deepseek/deepseek-v4-flash" }
   }
 };
 

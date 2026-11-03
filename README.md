@@ -51,7 +51,7 @@ Orbit works with OpenRouter, Gemini, OpenAI, or Anthropic. Add a key for any one
    | --- | --- |
    | `AI_PROVIDER` | Which provider is tried first: `openrouter`, `gemini`, `openai`, or `anthropic` |
    | `OPENROUTER_API_KEY` | OpenRouter key — one account, every model behind it |
-   | `OPENROUTER_FREE_MODEL` / `OPENROUTER_PAID_MODEL` | Model per tier. Defaults `openai/gpt-4.1-mini` and `anthropic/claude-sonnet-4.5` |
+   | `OPENROUTER_FREE_MODEL` / `OPENROUTER_PAID_MODEL` | Model per tier. Both default to `deepseek/deepseek-v4-flash` — the plans differ in daily requests, not in teaching quality |
    | `AI_API_KEY` or `GEMINI_API_KEY` | Gemini key |
    | `AI_MODEL` | Gemini model, for example `gemini-3.5-flash` |
    | `OPENAI_API_KEY` + `OPENAI_MODEL` | OpenAI key and model, for example `gpt-4o-mini` |
@@ -83,9 +83,9 @@ The tier is decided on the server and never read from the app, so a learner cann
 | --- | --- |
 | `PAID_EMAILS` | Comma-separated account emails on the paid plan; everyone else is free |
 | `ORBIT_FORCE_TIER` | `free` or `paid` — forces one plan for every learner while testing, overriding `PAID_EMAILS`; each learner still spends their own allowance |
-| `FREE_DAILY_TUTOR_CALLS` | Tutor replies per learner per day, default 40 |
+| `FREE_DAILY_TUTOR_CALLS` | Tutor replies per learner per day, default 15 (one topic costs 6-11 calls, so about two small topics) |
 | `FREE_DAILY_ROADMAPS` | Roadmap generations per learner per day, default 2 |
-| `PAID_DAILY_TUTOR_CALLS` / `PAID_DAILY_ROADMAPS` | Same guard on the paid plan, defaults 600 and 20, so a runaway client cannot spend without limit |
+| `PAID_DAILY_TUTOR_CALLS` / `PAID_DAILY_ROADMAPS` | Same guard on the paid plan, defaults 120 and 20 — about thirteen topics a day, which keeps one learner's worst month near ₹177 against ₹399 of fees, and stops a runaway client from spending without limit |
 
 Identification is `user:<supabase id>` when signed in, then `device:<device id>` from the app, then the request IP. A signed-in account is paid when it owns an active row in `learner_plan` (set by a real payment) or when its email is listed in `PAID_EMAILS`; everyone else is free. Going over a cap returns `AI_BUDGET_EXCEEDED` with an upgrade message, and the app opens the plans window. `/api/status` reports the resolved tier, plan, model and daily limits.
 

@@ -17,13 +17,15 @@ services:
       - key: AI_PROVIDER
         value: openrouter
       - key: OPENROUTER_FREE_MODEL
-        value: openai/gpt-4.1-mini
+        value: deepseek/deepseek-v4-flash
       - key: OPENROUTER_PAID_MODEL
-        value: anthropic/claude-sonnet-4.5
+        value: deepseek/deepseek-v4-flash
       - key: AI_FALLBACK_PROVIDERS
         value: gemini,openai,anthropic
       - key: FREE_DAILY_TUTOR_CALLS
-        value: "40"
+        value: "15"
+      - key: PAID_DAILY_TUTOR_CALLS
+        value: "120"
       - key: FREE_DAILY_ROADMAPS
         value: "2"
       - key: PAID_EMAILS

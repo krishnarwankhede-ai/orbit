@@ -449,7 +449,7 @@ async function confirmRazorpayPayment(response) {
     await updateAIStatus();
     document.querySelector("#plans-dialog").close();
     showToast(result.plan === "lifetime"
-      ? "Pro lifetime is unlocked. Your tutor now runs on the stronger model."
+      ? "Pro lifetime is unlocked. Your tutor is now available all day."
       : `Pro is active until ${new Date(result.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.`);
   } catch (error) {
     message.textContent = `${error.message} Payment id ${response.razorpay_payment_id} — quote it if you need help.`;
