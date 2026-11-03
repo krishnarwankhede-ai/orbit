@@ -453,9 +453,12 @@ const providerConfigs = {
     label: "OpenRouter",
     keyEnvs: ["OPENROUTER_API_KEY"],
     envPrefix: "OPENROUTER",
-    defaultModel: "openai/gpt-4.1-mini",
-    // One gateway, two tiers: a cheap model for free learners and Claude for paid learners.
-    tierModels: { free: "openai/gpt-4.1-mini", paid: "anthropic/claude-sonnet-4.5" }
+    defaultModel: "openai/gpt-4.1-nano",
+    // One gateway, two tiers: gpt-4.1-nano is the cheapest model that never spends hidden
+    // reasoning tokens, so the free plan cannot truncate its own JSON. DeepSeek v4-flash is
+    // ₹0.44 per topic against Claude's ₹0.72 for the same teaching quality, and reasoning is
+    // switched off in callOpenRouter because a reasoning model would eat max_tokens silently.
+    tierModels: { free: "openai/gpt-4.1-nano", paid: "deepseek/deepseek-v4-flash" }
   }
 };
 
@@ -560,8 +563,10 @@ function dailyLimit(tier, route) {
   const configured = readEnv(`${tier === "paid" ? "PAID" : "FREE"}_DAILY_${route === "roadmap" ? "ROADMAPS" : "TUTOR_CALLS"}`);
   const parsed = Number(configured);
   if (configured && Number.isFinite(parsed)) return Math.max(0, Math.round(parsed));
-  if (tier === "paid") return route === "roadmap" ? 20 : 600;
-  return route === "roadmap" ? 2 : 40;
+  // One topic costs 6-11 calls (brief + lesson + one per quiz question + finish), so a call
+  // budget is the real lesson budget: 15 ≈ 2 small topics for free, 120 ≈ 13 topics for Pro.
+  if (tier === "paid") return route === "roadmap" ? 20 : 120;
+  return route === "roadmap" ? 2 : 15;
 }
 
 function usageBucket(tier, usageKey, route) {
@@ -740,6 +745,8 @@ async function callOpenAI(entry, request) {
 }
 
 // OpenRouter accepts the same OpenAI-shaped body but names the output cap max_tokens.
+// Reasoning models spend part of max_tokens on hidden thinking and would truncate the lesson
+// JSON, so reasoning is switched off; OpenRouter ignores the field on models that have none.
 async function callOpenRouter(entry, request) {
   const siteUrl = readEnv("ORBIT_SITE_URL");
   const payload = await postToProvider(
@@ -750,9 +757,20 @@ async function callOpenRouter(entry, request) {
       "X-Title": "Orbit",
       ...(siteUrl ? { "HTTP-Referer": siteUrl } : {})
     },
-    openAiCompatibleBody(entry, request, "max_tokens")
+    {
+      ...openAiCompatibleBody(entry, request, "max_tokens"),
+      reasoning: { enabled: false }
+    }
   );
+  logAiTokens(entry, payload);
   return chatCompletionResult(payload);
+}
+
+// The real token counts per call, so the per-topic cost estimate can be checked against
+// production instead of assumed. Only numbers are logged, never the key or the reply.
+function logAiTokens(entry, payload) {
+  const usage = payload?.usage || {};
+  console.log(`[orbit] ai ${entry.provider}/${entry.model} in=${usage.prompt_tokens ?? "?"} out=${usage.completion_tokens ?? "?"}`);
 }
 
 async function callAnthropic(entry, request) {
