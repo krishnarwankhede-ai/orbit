@@ -1536,12 +1536,30 @@ async function handleApi(request, response, pathname) {
   // Providers expect the learner to have the last word, and the brief/lesson hand-off
   // arrives with the tutor's own line as the newest turn.
   if (!history.length || history.at(-1).role === "assistant") history.push({ role: "user", text: modeSeed });
-  const data = await askModel(systemPrompt, history, schema, maxOutputTokens, { tier: learner.tier });
-  const reply = mode === "brief" ? validateBrief(data)
+  const ask = () => askModel(systemPrompt, history, schema, maxOutputTokens, { tier: learner.tier });
+  const shape = () => mode === "brief" ? validateBrief(data)
     : mode === "lesson" ? validateLesson(data)
       : mode === "doubt" ? validateDoubt(data)
         : mode === "finish" ? validateVerdict(data)
           : validateTutorReply(data);
+  // Cheap models answer the quiz turn without the answer choices even though the strict schema
+  // demands 3-6, which used to surface as a 502 to the learner about a third of the time, and
+  // DeepSeek intermittently returns an empty completion. One quiet re-ask, then one corrective
+  // re-ask, costs ~₹0.02 and recovers almost every turn that used to fail in front of a learner.
+  let data;
+  let reply;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      data = await ask();
+      reply = shape();
+      break;
+    } catch (problem) {
+      if (attempt >= 2) throw problem;
+      if (problem?.code === "INVALID_TUTOR_QUESTION" || problem?.code === "INVALID_TUTOR_RESPONSE" || problem?.code === "INVALID_TUTOR_LESSON") {
+        history.push({ role: "user", text: "Return the same reply again, but fill options with three short answer choices to pick from - a fill-in-the-blank sentence still gets three word tiles." });
+      }
+    }
+  }
   chargeAiUsage(learner.tier, learner.usageKey, route);
   jsonResponse(response, 200, reply);
 }
