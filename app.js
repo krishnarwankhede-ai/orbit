@@ -20,7 +20,8 @@ const DEFAULT_PROGRESS = {
   masteryByConcept: {},
   currentConcept: 0,
   phase: "reflection",
-  conceptStats: {}
+  conceptStats: {},
+  session: null
 };
 
 let lessonStartedAt = Date.now();
@@ -221,6 +222,7 @@ function carryProgressToCurriculum(previousPlan, previousProgress, nextPlan) {
     conceptStats,
     currentConcept: Math.max(0, currentConcept),
     mastery: activeMastery,
+    session: null,
     phase: masteredConcepts.includes(currentConcept) ? "complete" : "reflection"
   };
 }
@@ -1205,17 +1207,7 @@ function addMessage(role, text, track = true, assessment = "", question = "", op
       : assessment === "partial" ? "Almost there" : "Let's try a smaller step";
     bubble.append(feedback);
   }
-  const inlineCode = /`([^`]+)`/g;
-  let cursor = 0;
-  let match;
-  while ((match = inlineCode.exec(text)) !== null) {
-    bubble.append(document.createTextNode(text.slice(cursor, match.index)));
-    const code = document.createElement("code");
-    code.textContent = match[1];
-    bubble.append(code);
-    cursor = inlineCode.lastIndex;
-  }
-  bubble.append(document.createTextNode(text.slice(cursor)));
+  appendRichText(bubble, text);
   content.append(author, bubble);
   if (role === "tutor" && question && options.length >= 2) {
     const challenge = document.createElement("section");
@@ -1295,6 +1287,15 @@ function addMessage(role, text, track = true, assessment = "", question = "", op
         if (selectedWords.length) submitAnswer(selectedWords.map((wordIndex) => options[wordIndex]).join(" "), challenge);
       });
       challenge.append(label, prompt, assembledAnswer, wordTokens, checkAnswer);
+      challenge.resetSelection = () => {
+        selectedWords.length = 0;
+        wordTokens.querySelectorAll(".word-token").forEach((token) => {
+          token.classList.remove("is-picked");
+          token.setAttribute("aria-pressed", "false");
+        });
+        assembledAnswer.textContent = "Tap words to build your answer";
+        checkAnswer.disabled = true;
+      };
       content.append(challenge);
     } else {
       let selectedOption = "";
@@ -1335,6 +1336,15 @@ function addMessage(role, text, track = true, assessment = "", question = "", op
         if (selectedOption) submitAnswer(selectedOption, challenge);
       });
       challenge.append(label, prompt, answers, checkAnswer);
+      // The card remembers its own pick, so a failed AI call must clear it or the retry tap deselects.
+      challenge.resetSelection = () => {
+        selectedOption = "";
+        answers.querySelectorAll("[data-answer-option]").forEach((choice) => {
+          choice.classList.remove("is-selected");
+          choice.setAttribute("aria-pressed", "false");
+        });
+        checkAnswer.disabled = true;
+      };
     }
     if (activityType !== "word_bank") content.append(challenge);
   }
@@ -1440,6 +1450,257 @@ function getConceptStats(index = getCurrentConcept().index) {
   };
 }
 
+const QUIZ_QUESTION_COUNT = 6;
+
+function appendRichText(target, text) {
+  const inlineCode = /`([^`]+)`/g;
+  let cursor = 0;
+  let match;
+  while ((match = inlineCode.exec(text)) !== null) {
+    target.append(document.createTextNode(text.slice(cursor, match.index)));
+    const code = document.createElement("code");
+    code.textContent = match[1];
+    target.append(code);
+    cursor = inlineCode.lastIndex;
+  }
+  target.append(document.createTextNode(text.slice(cursor)));
+}
+
+function tutorCard(kind) {
+  const message = document.createElement("article");
+  message.className = `message tutor-message ${kind}`;
+  const avatar = document.createElement("span");
+  avatar.className = "message-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = "✦";
+  const content = document.createElement("div");
+  content.className = "message-content";
+  message.append(avatar, content);
+  elements.chat.append(message);
+  elements.chat.scrollTop = elements.chat.scrollHeight;
+  return { message, content };
+}
+
+let tutorRequestInFlight = false;
+
+function freshSession() {
+  return { stage: "brief", title: "", sections: [], sectionIndex: 0, quizTotal: QUIZ_QUESTION_COUNT, results: [], pending: null };
+}
+
+function getSession() {
+  const session = progress.session;
+  return session && session.conceptIndex === getCurrentConcept().index ? session : null;
+}
+
+function saveSession(patch) {
+  progress.session = { ...freshSession(), ...getSession(), conceptIndex: getCurrentConcept().index, ...patch };
+  saveProgress();
+  return progress.session;
+}
+
+// The tutor is stateless between calls, so a resumed lesson or quiz rebuilds the conversation
+// from the stored results instead of spending another request on it.
+function seedHistoryFromSession(session) {
+  lessonHistory = session.results.flatMap((result) => [
+    { role: "model", text: `Question: ${result.question}` },
+    { role: "user", text: `My answer: ${result.answer}` }
+  ]);
+}
+
+function lessonDigest(session) {
+  return session.sections
+    .map((section, index) => `${index + 1}. ${section.heading} — ${section.body}`)
+    .join("\n")
+    .slice(0, 1800);
+}
+
+function renderBrief(reply, syllabus) {
+  const { content } = tutorCard("brief-card");
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble";
+  appendRichText(bubble, reply);
+  const list = document.createElement("ul");
+  list.className = "brief-syllabus";
+  syllabus.forEach((item) => {
+    const row = document.createElement("li");
+    row.className = "brief-item";
+    row.textContent = item;
+    list.append(row);
+  });
+  const caption = document.createElement("p");
+  caption.className = "brief-caption";
+  caption.textContent = "Pehle pura topic padhoge, phir uske hisaab se sawaal, aur ant me score.";
+  const actions = document.createElement("div");
+  actions.className = "brief-actions";
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "brief-start";
+  start.textContent = "Haan, shuru karo";
+  start.addEventListener("click", () => {
+    actions.remove();
+    caption.remove();
+    requestTutorReply("lesson");
+  });
+  actions.append(start);
+  content.append(bubble, list, caption, actions);
+}
+
+function renderLessonSection(session) {
+  const stored = document.querySelector("#lesson-card");
+  const card = stored || tutorCard("lesson-card").message;
+  if (!stored) card.id = "lesson-card";
+  const content = card.querySelector(".message-content");
+  const section = session.sections[session.sectionIndex];
+  if (!section) return;
+  content.replaceChildren();
+
+  const tag = document.createElement("span");
+  tag.className = "lesson-section-tag";
+  tag.textContent = `PADHAI · SECTION ${session.sectionIndex + 1} / ${session.sections.length}`;
+  const heading = document.createElement("h3");
+  heading.className = "lesson-section-heading";
+  heading.textContent = section.heading;
+  const body = document.createElement("div");
+  body.className = "lesson-body";
+  appendRichText(body, section.body);
+  content.append(tag, heading, body);
+
+  if (section.example) {
+    const example = document.createElement("div");
+    example.className = "lesson-example";
+    const label = document.createElement("span");
+    label.className = "lesson-example-label";
+    label.textContent = "EXAMPLE";
+    const exampleBody = document.createElement("div");
+    exampleBody.className = "lesson-example-body";
+    appendRichText(exampleBody, section.example);
+    example.append(label, exampleBody);
+    content.append(example);
+  }
+
+  const isLast = session.sectionIndex === session.sections.length - 1;
+  const nav = document.createElement("div");
+  nav.className = "lesson-nav";
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "lesson-back";
+  back.textContent = "← Peeche";
+  back.disabled = session.sectionIndex === 0;
+  back.addEventListener("click", () => {
+    renderLessonSection(saveSession({ sectionIndex: session.sectionIndex - 1 }));
+  });
+  const forward = document.createElement("button");
+  forward.type = "button";
+  forward.className = "lesson-forward";
+  forward.textContent = isLast ? "Quiz shuru karo →" : "Aage →";
+  forward.addEventListener("click", () => {
+    if (isLast) {
+      startQuiz();
+      return;
+    }
+    renderLessonSection(saveSession({ sectionIndex: session.sectionIndex + 1 }));
+  });
+  nav.append(back, forward);
+  content.append(nav);
+  updateSessionStep();
+  elements.chat.scrollTop = elements.chat.scrollHeight;
+}
+
+function renderQuizMeter() {
+  const session = getSession();
+  const node = document.querySelector("#quiz-meter");
+  if (!session || session.stage !== "quiz") {
+    node?.remove();
+    return;
+  }
+  const text = `Sawaal ${Math.min(session.results.length + 1, session.quizTotal)} / ${session.quizTotal}`;
+  if (node) {
+    node.textContent = text;
+    return;
+  }
+  const meter = document.createElement("p");
+  meter.id = "quiz-meter";
+  meter.className = "quiz-meter";
+  meter.textContent = text;
+  elements.chat.append(meter);
+}
+
+function startQuiz() {
+  saveSession({ stage: "quiz", results: [], pending: null });
+  seedHistoryFromSession(getSession());
+  updateSessionStep();
+  requestTutorReply("quiz");
+}
+
+function renderScoreCard() {
+  const session = getSession();
+  const total = session.results.length;
+  const correct = session.results.filter((result) => result.correct).length;
+  const score = total ? Math.round((correct / total) * 100) : 0;
+  const { content } = tutorCard("score-card");
+
+  const tag = document.createElement("span");
+  tag.className = "score-tag";
+  tag.textContent = "SESSION COMPLETE";
+  const value = document.createElement("div");
+  value.className = "score-value";
+  const number = document.createElement("strong");
+  number.textContent = String(score);
+  const percent = document.createElement("small");
+  percent.textContent = "%";
+  const tally = document.createElement("span");
+  tally.className = "score-tally";
+  tally.textContent = `${correct} / ${total} sahi`;
+  value.append(number, percent, tally);
+  const verdict = document.createElement("p");
+  verdict.className = "score-verdict";
+  verdict.textContent = score >= 80
+    ? "Zabardast — poora topic samajh aa gaya. Agla lesson kholo."
+    : score >= 50
+      ? "Achhi pakad. Neeche diye gaye hisse ek baar aur padh ke quiz dobara de sakte ho."
+      : "Koi baat nahi — lesson shuru se padho, phir quiz dobara try karo.";
+  content.append(tag, value, verdict);
+
+  const rows = document.createElement("div");
+  rows.className = "score-rows";
+  session.results.forEach((result, index) => {
+    const row = document.createElement("div");
+    row.className = `score-row ${result.correct ? "is-correct" : "is-wrong"}`;
+    const mark = document.createElement("span");
+    mark.className = "score-mark";
+    mark.setAttribute("aria-hidden", "true");
+    mark.textContent = result.correct ? "✓" : "✕";
+    const copy = document.createElement("div");
+    copy.className = "score-copy";
+    const question = document.createElement("p");
+    question.className = "score-question";
+    question.textContent = `${index + 1}. ${result.question}`;
+    const answer = document.createElement("p");
+    answer.className = "score-answer";
+    answer.textContent = `Tumhara jawab: ${result.answer}`;
+    copy.append(question, answer);
+    row.append(mark, copy);
+    rows.append(row);
+  });
+  content.append(rows);
+
+  const actions = document.createElement("div");
+  actions.className = "score-actions";
+  const reread = document.createElement("button");
+  reread.type = "button";
+  reread.className = "score-reread";
+  reread.textContent = "Lesson dobara padho";
+  reread.addEventListener("click", () => {
+    const again = saveSession({ stage: "lesson", sectionIndex: 0, results: [], pending: null });
+    document.querySelector("#quiz-meter")?.remove();
+    renderLessonSection(again);
+  });
+  actions.append(reread);
+  content.append(actions);
+  updateSessionStep();
+  elements.chat.scrollTop = elements.chat.scrollHeight;
+}
+
 function startLesson() {
   const concept = getCurrentConcept();
   lessonStartedAt = Date.now();
@@ -1459,11 +1720,27 @@ function startLesson() {
     showLessonNext();
     return;
   }
-  if (progress.phase === "exercise") {
-    requestTutorReply("continue");
+
+  const session = getSession();
+  if (!session) {
+    requestTutorReply("brief");
     return;
   }
-  requestTutorReply("start");
+  seedHistoryFromSession(session);
+  if (session.stage === "lesson" && session.sections.length) {
+    renderLessonSection(session);
+    return;
+  }
+  if (session.stage === "quiz" && session.pending) {
+    addMessage("tutor", session.pending.reply, true, "", session.pending.question, session.pending.options, session.pending.activityType);
+    renderQuizMeter();
+    return;
+  }
+  if (session.stage === "score") {
+    renderScoreCard();
+    return;
+  }
+  requestTutorReply("brief");
 }
 
 function recordStudyDay() {
@@ -1486,51 +1763,57 @@ function updateMastery(value) {
 }
 
 function updateSessionStep() {
-  const stats = getConceptStats();
+  const session = getSession();
+  const stage = session?.stage || "brief";
   const complete = progress.phase === "complete";
-  const step = complete ? 3 : stats.attempts === 0 ? 0 : stats.correct < 2 ? 1 : 2;
-  const labels = ["Learn the idea", "Practice together", "Mastery check"];
+  const stepNumber = complete ? 3 : stage === "quiz" ? 2 : stage === "score" ? 3 : 1;
+  const titles = ["Learn the topic", "Quiz on the whole topic", "Your score"];
   const descriptions = [
-    "Learn one idea, practice it, then show what you know.",
-    "Try a short exercise. Your tutor will adapt to your answer.",
-    "Three correct checkpoints and 80% mastery complete this lesson."
+    "Your tutor teaches the topic from A to Z, one section at a time.",
+    "Questions drawn from every section of the lesson, with feedback after each answer.",
+    "See how many you got right, then move on or read the lesson again."
   ];
-  document.querySelector("#session-step-title").textContent = complete ? "Mastery achieved" : labels[step];
-  document.querySelector("#session-step-count").textContent = complete ? "ALL STEPS COMPLETE" : `STEP ${step + 1} OF 3`;
-  document.querySelector("#session-step-description").textContent = complete
-    ? "You passed all three checkpoints. Continue to your next lesson when ready."
-    : descriptions[step];
+  const guides = {
+    brief: ["Ready to learn?", "Pehle padho, phir quiz. Ek step at a time."],
+    lesson: ["Padho, ek section ke baad doosra", "Jab samajh aa jaye tab “Aage” dabao."],
+    quiz: ["Quiz time", "Jo padha, bas wahi puchha jayega."],
+    score: ["Session complete", "Score card me poora hisaab dekho."]
+  };
   const guideMessages = complete
     ? ["You did it! A whole new skill unlocked.", "That’s a win worth celebrating!"]
-    : [
-      ["Ready to learn?", "One step at a time. You’ve got this!"],
-      ["Let’s practice!", "Try it out. Every attempt helps you learn."],
-      ["Time to show what you know!", "Take a breath—you’re ready."]
-    ][step];
+    : guides[stage];
+  document.querySelector("#session-step-title").textContent = complete ? "Mastery achieved" : titles[stepNumber - 1];
+  document.querySelector("#session-step-count").textContent = complete ? "ALL STEPS COMPLETE" : `STEP ${stepNumber} OF 3`;
+  document.querySelector("#session-step-description").textContent = complete
+    ? "You cleared the quiz. Continue to your next lesson when ready."
+    : descriptions[stepNumber - 1];
   document.querySelector("#stage-guide-title").textContent = guideMessages[0];
   document.querySelector("#stage-guide-message").textContent = guideMessages[1];
   [1, 2, 3].forEach((number) => {
     const dot = document.querySelector(`#step-dot-${number}`);
-    dot.classList.toggle("is-active", !complete && number === step + 1);
-    dot.classList.toggle("is-complete", complete || number < step + 1);
+    dot.classList.toggle("is-active", !complete && number === stepNumber);
+    dot.classList.toggle("is-complete", complete || number < stepNumber);
   });
-  const railStage = complete ? "complete" : step === 0 ? "learn" : step === 1 ? "practice" : "mastery";
+  const railStage = complete ? "complete" : stage === "quiz" ? "practice" : stage === "score" ? "mastery" : "learn";
   const railOrder = { learn: 0, practice: 1, mastery: 2, complete: 3 };
   document.querySelectorAll(".lesson-rail-step").forEach((item) => {
     const itemOrder = railOrder[item.dataset.lessonStage];
     item.classList.toggle("is-active", item.dataset.lessonStage === railStage);
     item.classList.toggle("is-complete", complete || itemOrder < railOrder[railStage]);
   });
+  // Only the finished lesson closes the box; a doubt can be asked at any other moment.
+  elements.answer.disabled = complete;
+  elements.send.disabled = complete;
   document.querySelector("#composer-hint").textContent = complete
-    ? `Lesson complete · ${stats.correct}/3 checkpoints`
-    : progress.phase === "exercise"
-    ? `${stats.correct}/3 checkpoints · ${progress.xp} XP earned`
-    : "No rush — your tutor will guide you.";
-  elements.answer.placeholder = step === 0
-    ? "Tap an answer above or share what you know…"
-    : step === 2
-      ? "Choose an answer or explain it in your own words…"
-      : "Tap an answer above or explain your thinking…";
+    ? "Lesson complete"
+    : stage === "quiz"
+      ? `${session.results.length}/${session.quizTotal} jawab · ${progress.xp} XP earned`
+      : stage === "lesson"
+        ? `Section ${session.sectionIndex + 1} of ${session.sections.length} — padho, phir Aage dabao`
+        : "Koi doubt ho to yahin puch lo.";
+  elements.answer.placeholder = stage === "quiz"
+    ? "Upar jawab tap karo — ya koi sawaal ho to “?” ke saath yahan likho…"
+    : "Koi sawaal? Yahan puchho — padhai wahin se continue hogi…";
 }
 
 function showLessonNext() {
@@ -1564,16 +1847,28 @@ function finishLesson(reply) {
 }
 
 async function requestTutorReply(mode, userMessage = "", sourceChallenge = null) {
+  // Every phase of a session costs an AI call the learner is budgeted for, so a double tap must not fire two.
+  if (tutorRequestInFlight) return;
+  tutorRequestInFlight = true;
   const concept = getCurrentConcept();
   const course = getCourse();
-  const history = lessonHistory.slice(-10);
-  if (history[0]?.role === "model") history.shift();
+  // A resumed quiz starts on the tutor's own question, and dropping that turn would leave the
+  // model grading an answer it has never seen the question for. The anchor replaces the oldest
+  // turn rather than adding an eleventh, because the server caps history at ten messages.
+  let history = lessonHistory.slice(-10);
+  if (history[0]?.role === "model") {
+    history = lessonHistory.slice(-9);
+    history.unshift({ role: "user", text: "I finished the lesson. Ask me the next question." });
+  }
   elements.send.disabled = true;
   elements.answer.disabled = true;
   document.querySelector("#composer-hint").textContent = "Your AI tutor is thinking…";
   setTutorThinking(true);
   try {
     const stats = getConceptStats(concept.index);
+    const session = getSession() || freshSession();
+    // The final answer gets a closing verdict instead of a seventh question.
+    const requestMode = mode === "answer" && session.results.length + 1 >= session.quizTotal ? "finish" : mode;
     const result = await apiRequest("/api/tutor", {
       skill: course.name,
       level: getRecommendedLevel(profile || {}),
@@ -1583,11 +1878,13 @@ async function requestTutorReply(mode, userMessage = "", sourceChallenge = null)
       exercise: concept.exercise,
       mastery: progress.mastery,
       attemptsInConcept: stats.attempts,
-      correctAnswers: stats.correct,
-      lessonStage: stats.correct >= 2
-        ? "mastery"
-        : progress.phase === "exercise" ? "practice" : "learn",
-      mode,
+      correctAnswers: session.results.filter((item) => item.correct).length,
+      // In answer mode the learner is replying to question results.length + 1, so the next one is one further.
+      quizIndex: session.results.length + (mode === "answer" ? 1 : 0),
+      quizTotal: session.quizTotal,
+      lessonOutline: session.sections.map((section) => section.heading),
+      lessonDigest: lessonDigest(session),
+      mode: requestMode,
       history,
       deviceId: learnerDeviceId()
     });
@@ -1597,78 +1894,96 @@ async function requestTutorReply(mode, userMessage = "", sourceChallenge = null)
         option.classList.toggle("is-selected", option.querySelector(".answer-option-copy").textContent === userMessage);
       }
     });
-    const isCorrect = Boolean(userMessage) && result.assessment === "correct";
-    if ((mode === "start" || mode === "continue") && lessonHistory.length === 0) {
-      lessonHistory.push({
-        role: "user",
-        text: mode === "start"
-          ? "Start teaching me interactively. Introduce this concept briefly, then ask what I already think or know."
-          : "Continue the lesson with a short explanation and one practice question."
-      });
+
+    if (result.phase === "brief") {
+      saveSession({ stage: "brief" });
+      renderBrief(result.reply, result.syllabus);
+      lessonHistory.push({ role: "model", text: `Told the learner the topic covers: ${result.syllabus.join(", ")} and asked whether to start.` });
+      return;
     }
+
+    if (result.phase === "doubt") {
+      addMessage("tutor", result.reply, true);
+      return;
+    }
+
+    if (result.phase === "lesson") {
+      const stored = saveSession({
+        stage: "lesson",
+        title: result.lesson.title,
+        sections: result.lesson.sections,
+        quizTotal: result.lesson.questionCount,
+        sectionIndex: 0,
+        results: [],
+        pending: null
+      });
+      progress.phase = "exercise";
+      saveProgress();
+      if (result.reply) addMessage("tutor", result.reply, true);
+      renderLessonSection(stored);
+      return;
+    }
+
+    const isCorrect = result.assessment === "correct";
     if (userMessage) {
-      const conceptIndex = concept.index;
-      const stats = getConceptStats(conceptIndex);
+      const currentStats = getConceptStats(concept.index);
       progress.conceptStats = {
         ...progress.conceptStats,
-        [conceptIndex]: {
-          attempts: stats.attempts + 1,
-          correct: stats.correct + Number(isCorrect)
+        [concept.index]: {
+          attempts: currentStats.attempts + 1,
+          correct: currentStats.correct + Number(isCorrect)
         }
       };
       progress.attempts += 1;
       if (isCorrect) {
         progress.correctAnswers += 1;
         progress.xp += 1;
+        celebrateXP(1);
+        showToast("Sahi jawab · +1 XP");
+        updateMastery(Math.min(79, progress.mastery + result.masteryDelta));
       }
       recordStudyDay();
       progress.phase = "exercise";
-    }
-    const nextMastery = isCorrect
-      ? Math.max(
-        Math.min(100, progress.mastery + result.masteryDelta),
-        Math.round((getConceptStats(concept.index).correct / 3) * 100)
-      )
-      : progress.mastery;
-    const checkpoints = getConceptStats(concept.index).correct;
-    if (isCorrect && !(checkpoints >= 3 && nextMastery >= 80)) celebrateXP(1);
-    if (checkpoints >= 3 && nextMastery >= 80) {
-      progress.mastery = Math.max(80, nextMastery);
-      updateMastery(progress.mastery);
-      finishLesson(result.reply);
-    } else {
-      progress.mastery = Math.min(79, progress.mastery);
-      updateMastery(Math.min(79, nextMastery));
-      addMessage("tutor", result.reply, true, userMessage ? result.assessment : "", result.question, result.options, result.activityType);
-      if (result.mastered && checkpoints < 3) {
-        addMessage("tutor", `Nice work — that's ${checkpoints} of 3 correct checkpoints. Let's do another quick challenge before unlocking the next lesson.`, false);
-      }
-      if (isCorrect) showToast(`Checkpoint passed! ${checkpoints}/3 · +1 XP`);
       saveProgress();
-      updateSessionStep();
+      reactToLessonAssessment(result.assessment);
     }
-    if (userMessage) reactToLessonAssessment(result.assessment);
+
+    const results = userMessage
+      ? [...session.results, { question: session.pending?.question || "", answer: userMessage, correct: isCorrect }]
+      : session.results;
+
+    if (result.phase === "verdict" || results.length >= session.quizTotal) {
+      const correctCount = results.filter((item) => item.correct).length;
+      const score = Math.round((correctCount / results.length) * 100);
+      saveSession({ stage: "score", results, pending: null });
+      addMessage("tutor", result.reply, true, userMessage ? result.assessment : "");
+      updateMastery(score);
+      renderQuizMeter();
+      renderScoreCard();
+      if (score >= 80) finishLesson(`${correctCount} of ${results.length} quiz questions right — this topic is yours.`);
+      return;
+    }
+
+    saveSession({
+      stage: "quiz",
+      results,
+      pending: { question: result.question, options: result.options, activityType: result.activityType, reply: result.reply }
+    });
+    addMessage("tutor", result.reply, true, userMessage ? result.assessment : "", result.question, result.options, result.activityType);
+    renderQuizMeter();
   } catch (error) {
     if (userMessage && lessonHistory.at(-1)?.role === "user") lessonHistory.pop();
-    sourceChallenge?.querySelectorAll(".answer-option, .word-token, .word-bank-check, .challenge-check").forEach((option) => {
+    sourceChallenge?.resetSelection?.();
+    sourceChallenge?.querySelectorAll(".answer-option, .word-token").forEach((option) => {
       option.disabled = false;
-      if (option.matches(".challenge-check")) {
-        option.disabled = !sourceChallenge.querySelector(".answer-option.is-selected");
-      } else if (option.matches(".word-bank-check")) {
-        option.disabled = !sourceChallenge.querySelector(".word-token.is-picked");
-      } else if (option.matches(".answer-option")) {
-        option.classList.remove("is-selected");
-        option.setAttribute("aria-pressed", "false");
-      }
     });
     addMessage("system", error.message, false);
     if (error.code === "AI_BUDGET_EXCEEDED") openPlansDialog(error.message);
     else showToast(error.message);
   } finally {
+    tutorRequestInFlight = false;
     setTutorThinking(false);
     if (progress.phase !== "complete") {
-      elements.answer.disabled = false;
-      elements.send.disabled = false;
       updateSessionStep();
     }
   }
@@ -1688,7 +2003,11 @@ function handleAnswer() {
 function submitAnswer(answer, sourceChallenge = null) {
   addMessage("user", answer);
   elements.answer.value = "";
-  requestTutorReply("answer", answer, sourceChallenge);
+  // Typing while a question is on screen answers it; anything else is the learner asking.
+  // A line ending in a question mark is treated as a doubt so it is never graded or counted,
+  // and the pending question stays open for the real answer.
+  const isDoubt = getSession()?.stage !== "quiz" || /[?¿]\s*$/.test(answer);
+  requestTutorReply(isDoubt ? "doubt" : "answer", answer, isDoubt ? null : sourceChallenge);
 }
 
 function renderProgress() {
