@@ -1,6 +1,50 @@
-# Orbit — AI learning platform
+# Orbit — an AI tutor that plans the path, then teaches it
 
-Orbit is an early, local-first product prototype for learning any skill with an AI tutor. It asks about the learner's skill, starting point, goal, and daily learning time; asks your AI provider to build a roadmap; and uses the same provider for interactive, adaptive lessons.
+**Live site:** <https://orbit-gs0d.onrender.com> · India · ₹399 / 30 days, ₹2,999 / 365 days, ₹1,999 lifetime
+
+Orbit is a complete, running AI learning platform, not a demo. A learner says what they want to learn, how much they already know and how many minutes a day they have. Orbit's AI writes a personalised roadmap of about 40 lessons in 8 sections, then teaches it one concept at a time in a chat: explains, sets a challenge, grades the answer, scaffolds the mistake, rephrases the doubt, and only unlocks the next concept after three correct checkpoints and 80% mastery. The same tutor answers questions mid-lesson instead of going quiet.
+
+Everything is server-decided and real: the tier, the daily AI budget, the monthly skill allowance, the payment amount and the plan activation. Nothing about money or quota is mocked, and no API key ever reaches the browser.
+
+| | Free | Pro |
+| --- | --- | --- |
+| New skills per calendar month | 1 | unlimited |
+| Skills already started | kept for life, switchable in the sidebar | kept for life |
+| Tutor replies per day | 15 | 120 |
+| Roadmap generations per day | 2 | 20 |
+| Model | `deepseek/deepseek-v4-flash` | the same model — plans differ in volume, not in teaching quality |
+
+## How a session actually goes
+
+1. **Onboarding** — skill, self-rated level, goal, daily minutes, then one tiny placement question. The AI answers shape the path, not a fixed template.
+2. **Roadmap** — the server asks the model for the whole curriculum in one call and *repairs* the near-misses (41 lessons with a repeated title, a phase holding four) instead of failing the learner after a 35-second wait. A path under 30 lessons is re-asked once.
+3. **Lesson rail** — Learn → Practice → Mastery Check, with the recommended study day from the learner's own daily minutes.
+4. **Tutor** — the exercise format follows the skill: multiple choice, fill-the-blank, word-bank building, or a practical scenario. A line ending in `?` is treated as a doubt and is never graded or counted.
+5. **Progress** — per-skill mastery, XP and streak, kept for every skill in the library and synced to the learner's account.
+
+## Why the engineering is worth a look
+
+- **Zero dependencies.** A hand-written Node `http` server, one vanilla-JS client, no framework, no build step, no bundler — `npm start` and it runs. `server.js` also serves the five public legal pages from the same process.
+- **Measured economics, not guesses.** One 40-lesson roadmap costs ₹0.006–0.01 and about 2,200 output tokens; one taught topic runs ₹0.06–0.38. A learner's whole month lands around ₹2–12, which is why the free tier is a *volume* limit rather than a worse model.
+- **Budget that cannot be gamed.** A reply that fails at the provider or comes back malformed is not charged to the learner. The tier comes from the account on the server, so editing a request cannot buy the paid model.
+- **A monthly cap that survives a restart.** `learner_skill` in Postgres answers two different questions at once — names ever started, and names first started this month — so reopening Python in December never spends December's free skill, and a cleared browser cannot farm allowances.
+- **Multi-skill by design.** Every started skill lives in `orbit-skill-library-v1` and syncs as one v2 payload; applying cloud state *merges*, so a stale single-skill row can never delete a skill the learner holds locally.
+- **Fail-open where it matters.** If Supabase is unreachable the skill gate opens and logs, because an outage should not stop someone from studying. If the first AI provider is out of quota, the same request retries on the next provider.
+- **Four offline test suites** (`npm run check`) cover the provider chain, forged Razorpay signatures, Google PKCE and cookie sessions, and the legal pages — without calling a single paid API, so verifying costs nothing.
+
+## Repository map
+
+| File | Role |
+| --- | --- |
+| `server.js` | HTTP server, AI provider chain and fallbacks, tiers, skill gate, Supabase state + auth, Razorpay verify/webhook, legal pages |
+| `app.js` / `index.html` / `styles.css` | the entire client — onboarding, roadmap rendering, lesson rail, tutor chat, skill library, cloud sync |
+| `legal/*.html` | `/pricing` `/privacy` `/terms` `/refund-policy` `/contact`, filled from the same server values the checkout enforces |
+| `supabase.sql` | `learner_state`, `learner_plan` and `learner_skill` with row-level security on |
+| `scripts/check-*.js` | the four offline suites |
+| `render.yaml` | one-click deploy of the app + backend as a single service |
+| `android/` | optional Capacitor shell that packages the same web files |
+
+The rest of this document is the operator's guide: connecting a provider, deploying, taking payment, and passing a payment gateway's website review.
 
 ## Requirements
 
@@ -222,3 +266,10 @@ npm run check
 ```
 
 Four offline suites run against stubbed providers — `check-ai.js` (provider chain, tiers, caps), `check-billing.js` (Razorpay signatures, server-side prices, plan grant, webhook), `check-auth.js` (Google PKCE and the session cookie) and `check-legal.js` (the five public pages). None of them calls a paid API, so verifying costs nothing.
+
+## License
+
+Orbit is the source-available portfolio of a solo-built, commercially running product: **all rights reserved**, no license to redistribute or sell it is granted. The code is published here so that anyone can read exactly how a real AI tutoring product handles tiers, budgets, payments and learner data — read it, learn from it, run your own copy for personal use by following the guide above, and open an issue if you spot a way it could be safer or cheaper for the learner who pays for it.
+
+Provider keys, Supabase credentials and Razorpay secrets are read from a Git-ignored `.env` or the hosting provider's secret store; this repository has never contained one. The live deployment's business details (firm name, support email, address) are intentionally public on `/contact`, because Indian payment regulators require them to be.
+
