@@ -31,6 +31,7 @@ Everything is server-decided and real: the tier, the daily AI budget, the monthl
 - **Multi-skill by design.** Every started skill lives in `orbit-skill-library-v1` and syncs as one v2 payload; applying cloud state *merges*, so a stale single-skill row can never delete a skill the learner holds locally.
 - **Fail-open where it matters.** If Supabase is unreachable the skill gate opens and logs, because an outage should not stop someone from studying. If the first AI provider is out of quota, the same request retries on the next provider.
 - **Four offline test suites** (`npm run check`) cover the provider chain, forged Razorpay signatures, Google PKCE and cookie sessions, and the legal pages — without calling a single paid API, so verifying costs nothing.
+- **Discoverable without a framework.** `robots.txt`, `sitemap.xml` and an SVG favicon are answered by the same hand-written server, and the page's Open Graph tags and JSON-LD (`Organization`, `WebSite`, `SoftwareApplication`, `FAQPage`) are generated at request time from `billingPlans` and the live daily/monthly limit helpers — so a search result can never quote a price or an allowance the checkout and the gate disagree with.
 
 ## Repository map
 

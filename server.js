@@ -1885,6 +1885,105 @@ ${urls.map((route) => `  <url><loc>${origin}${route}</loc><lastmod>${today}</las
 `;
 }
 
+// Google reads this block to understand what Orbit is, so every number in it comes from the
+// same helpers the server enforces - a plan can never be advertised at a price checkout charges.
+function seoJsonLd(request) {
+  const site = siteInfo(request);
+  const origin = site.siteUrl || requestOrigin(request);
+  const freeSkillLimit = monthlySkillLimit("free");
+  const skillPhrase = freeSkillLimit === null
+    ? "unlimited new skills every month"
+    : `${freeSkillLimit} new skill${freeSkillLimit === 1 ? "" : "s"} a month`;
+  const offers = Object.entries(billingPlans).map(([id, plan]) => ({
+    "@type": "Offer",
+    name: plan.label,
+    price: (plan.amountPaise / 100).toFixed(2),
+    priceCurrency: plan.currency,
+    category: id === "lifetime" ? "one-time payment" : `${plan.periodDays}-day plan, no auto-renewal`,
+    url: `${origin}/pricing`
+  }));
+  const graph = [
+    {
+      "@type": "Organization",
+      "@id": `${origin}/#organization`,
+      name: site.businessName || "Orbit",
+      url: origin,
+      logo: `${origin}/orbit-share.png`,
+      email: site.supportEmail || undefined,
+      address: site.address ? { "@type": "PostalAddress", streetAddress: site.address } : undefined
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${origin}/#website`,
+      url: origin,
+      name: "Orbit",
+      description: "An AI tutor that writes a personal learning path for any skill and then teaches it one lesson at a time.",
+      publisher: { "@id": `${origin}/#organization` },
+      inLanguage: "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "Orbit",
+      url: origin,
+      image: `${origin}/orbit-share.png`,
+      applicationCategory: "EducationalApplication",
+      operatingSystem: "Web, Android",
+      description: "Orbit asks what you want to learn, your starting level and your daily minutes, generates a roadmap of about 40 lessons, and teaches it through a chat tutor that answers doubts and gates each concept behind an 80% mastery check.",
+      featureList: [
+        "AI-generated personalised learning path",
+        "One-to-one AI tutor chat that answers doubts mid-lesson",
+        "Mastery gate before the next concept unlocks",
+        "Keeps every skill a learner starts, with per-skill progress",
+        "Cloud-synced progress with Google sign-in",
+        `${skillPhrase} on the free plan, unlimited on Pro`,
+        `${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} roadmaps a day free, ${dailyLimit("paid", "tutor")} and ${dailyLimit("paid", "roadmap")} on Pro`
+      ],
+      offers: [
+        { "@type": "Offer", name: "Free plan", price: "0.00", priceCurrency: "INR", category: skillPhrase, url: origin },
+        ...offers
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "Is Orbit free?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: `Yes. The free plan teaches with the same AI model as Pro and starts ${skillPhrase}, with ${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} learning-path generations a day. Skills you have started stay yours to keep studying.`
+          }
+        },
+        {
+          "@type": "Question",
+          name: "What does Orbit Pro cost?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: `${billingPlans.monthly.label} is ₹${billingPlans.monthly.amountPaise / 100} for 30 days, ${billingPlans.yearly.label} is ₹${billingPlans.yearly.amountPaise / 100} for 365 days and ${billingPlans.lifetime.label} is ₹${billingPlans.lifetime.amountPaise / 100} once. Plans do not renew automatically; each is a single payment for a fixed period.`
+          }
+        },
+        {
+          "@type": "Question",
+          name: "How does Orbit's AI tutor teach?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "It explains one concept at a time, sets a practice challenge matched to the skill, grades the answer, scaffolds the mistake, and answers any doubt you type in the same chat. A concept unlocks the next one only after three correct checkpoints and 80% mastery."
+          }
+        },
+        {
+          "@type": "Question",
+          name: "Can I get a refund?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Yes - within 7 days of payment, no questions asked, refunded to the original payment method through Razorpay. The full terms are on the refund policy page."
+          }
+        }
+      ]
+    }
+  ];
+  return JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replace(/</g, "\\u003c");
+}
+
 function serveStatic(response, pathname, request) {
   if (LEGAL_PAGES.has(pathname)) {
     let html;
@@ -1933,10 +2032,17 @@ function serveStatic(response, pathname, request) {
       jsonResponse(response, 500, { error: "Could not read the app files." });
       return;
     }
-    // The share tags have to carry the deployed origin, which the static file cannot know.
-    const body = requestPath === "/index.html"
-      ? content.toString("utf8").replaceAll("{{siteUrl}}", siteInfo(request).siteUrl || requestOrigin(request))
-      : content;
+    // The share tags and structured data have to carry the deployed origin, which a static file
+    // cannot know, and the search-console token lives in the host's environment.
+    let body = content;
+    if (requestPath === "/index.html") {
+      const origin = siteInfo(request).siteUrl || requestOrigin(request);
+      body = content
+        .toString("utf8")
+        .replaceAll("{{siteUrl}}", origin)
+        .replaceAll("{{seoJsonLd}}", seoJsonLd(request))
+        .replaceAll("{{googleVerify}}", readEnv("GOOGLE_SITE_VERIFICATION").trim());
+    }
     response.writeHead(200, {
       "Cache-Control": "no-cache",
       "Content-Type": mimeTypes[path.extname(filePath)] || "application/octet-stream",
