@@ -430,6 +430,9 @@ function limitRequests(request) {
 }
 
 const AI_TIMEOUT_MS = 30_000;
+// A roadmap is asked for 8-10 phases of 5-7 lessons each, which is thousands of output tokens and
+// never finishes inside the tutor's 30 seconds; measured, it aborts at exactly 30 s every time.
+const ROADMAP_TIMEOUT_MS = 120_000;
 const AI_SCHEMA_NAME = "orbit_response";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const providerConfigs = {
@@ -691,14 +694,14 @@ function requireAccountForSkill(learner) {
   );
 }
 
-async function postToProvider(entry, url, headers, body) {
+async function postToProvider(entry, url, headers, body, timeoutMs = AI_TIMEOUT_MS) {
   let upstream;
   try {
     upstream = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(AI_TIMEOUT_MS)
+      signal: AbortSignal.timeout(timeoutMs)
     });
   } catch (error) {
     const message = error.name === "TimeoutError"
@@ -799,7 +802,8 @@ async function callGemini(entry, request) {
         maxOutputTokens: request.maxOutputTokens,
         temperature: 0.6
       }
-    }
+    },
+    request.timeoutMs
   );
   return payload?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim() || "";
 }
@@ -828,7 +832,8 @@ async function callOpenAI(entry, request) {
     entry,
     "https://api.openai.com/v1/chat/completions",
     { Authorization: `Bearer ${entry.apiKey}` },
-    openAiCompatibleBody(entry, request, "max_completion_tokens")
+    openAiCompatibleBody(entry, request, "max_completion_tokens"),
+    request.timeoutMs
   );
   return chatCompletionResult(payload);
 }
@@ -849,7 +854,8 @@ async function callOpenRouter(entry, request) {
     {
       ...openAiCompatibleBody(entry, request, "max_tokens"),
       reasoning: { enabled: false }
-    }
+    },
+    request.timeoutMs
   );
   logAiTokens(entry, payload);
   return chatCompletionResult(payload);
@@ -879,7 +885,8 @@ async function callAnthropic(entry, request) {
         input_schema: toStandardSchema(request.responseSchema)
       }],
       tool_choice: { type: "tool", name: AI_SCHEMA_NAME }
-    }
+    },
+    request.timeoutMs
   );
   const block = payload?.content?.find((part) => part.type === "tool_use" && part.name === AI_SCHEMA_NAME);
   return block ? JSON.stringify(block.input) : "";
@@ -900,7 +907,7 @@ async function askModel(systemInstruction, messages, responseSchema, maxOutputTo
       { status: 503, code: "AI_NOT_CONFIGURED" }
     );
   }
-  const request = { systemInstruction, messages, responseSchema, maxOutputTokens };
+  const request = { systemInstruction, messages, responseSchema, maxOutputTokens, timeoutMs: options.timeoutMs || AI_TIMEOUT_MS };
   let lastError;
   for (let index = 0; index < chain.length; index += 1) {
     const entry = chain[index];
@@ -1036,7 +1043,29 @@ const doubtSchema = {
   required: ["reply"]
 };
 
-function validateRoadmap(data) {
+function validateRoadmap(input) {
+  // Clean the copy the learner sees, not the copy being checked, so the length rules below still
+  // count the lessons the model actually returned.
+  const data = Array.isArray(input?.phases)
+    ? {
+      ...input,
+      courseName: cleanAiText(input.courseName ?? ""),
+      placementSummary: cleanAiText(input.placementSummary ?? ""),
+      phases: input.phases.map((phase) => ({
+        ...phase,
+        title: cleanAiText(phase?.title ?? ""),
+        subtitle: cleanAiText(phase?.subtitle ?? ""),
+        concepts: Array.isArray(phase?.concepts)
+          ? phase.concepts.map((concept) => ({
+            ...concept,
+            title: cleanAiText(concept?.title ?? ""),
+            objective: cleanAiText(concept?.objective ?? ""),
+            exercise: cleanAiText(concept?.exercise ?? "")
+          }))
+          : phase?.concepts
+      }))
+    }
+    : input;
   if (!data || !Array.isArray(data.phases) || data.phases.length < 8 || data.phases.length > 12) {
     throw Object.assign(new Error("The AI could not build a complete learning path. Please try again."), { status: 502, code: "INVALID_ROADMAP" });
   }
@@ -1081,6 +1110,38 @@ function invalidTutorStage(message, code) {
   return Object.assign(new Error(message), { status: 502, code });
 }
 
+// Models answer in markdown, and inside a JSON string a line break arrives as the two characters
+// "\n" rather than a real newline. The answer bubbles keep line breaks, so both are unwrapped here
+// instead of hoping every prompt asks for plain text. Only paired emphasis markers are removed -
+// a lone asterisk is Python's *args, not italics - so teaching code keeps its stars.
+function cleanAiText(value) {
+  return String(value)
+    .replace(/\r\n?/g, "\n")
+    .replace(/\\r\n|\\n|\\r/g, "\n")
+    .replace(/```[a-z]*\n?/gi, "")
+    .replace(/`/g, "")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/__([^_\n]+)__/g, "$1")
+    .replace(/^#{1,6}[ \t]+/gm, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// DeepSeek sometimes writes the option list into the question text too, and the lesson rail already
+// renders A/B/C buttons, so the same words would appear twice on screen. Only cut when at least two
+// of the options really appear in the question, so a stem that merely names one answer survives.
+function stripRepeatedOptions(question, options) {
+  const listed = options.filter((option) => option.length > 1 && question.includes(option));
+  if (listed.length < 2) return question;
+  const stem = cleanAiText(question.slice(0, question.indexOf(listed[0])))
+    .replace(/[ \t]*[A-Za-z][\s.)\]]+$/, "")
+    .replace(/[ \t]*[:;.\-–—]+$/, "")
+    .replace(/[ \t]*(?:options?|choices?|उत्तर|विकल्प\w*)[ \t]*[:;.\-–—]*$/i, "")
+    .replace(/[ \t]*[:;.\-–—]+$/, "");
+  return stem || question;
+}
+
 function validateBrief(data) {
   if (!data || typeof data.reply !== "string" || !data.reply.trim()) {
     throw invalidTutorStage("The AI tutor could not introduce this topic. Please try again.", "INVALID_TUTOR_BRIEF");
@@ -1090,17 +1151,17 @@ function validateBrief(data) {
     console.warn(`[orbit] rejected brief syllabus: items=${Array.isArray(data.syllabus) ? data.syllabus.length : "not-an-array"}`);
     throw invalidTutorStage("The AI tutor could not outline this topic. Please try again.", "INVALID_TUTOR_BRIEF");
   }
-  return { phase: "brief", reply: data.reply.trim().slice(0, 1200), syllabus };
+  return { phase: "brief", reply: cleanAiText(data.reply).slice(0, 1200), syllabus: syllabus.map(cleanAiText).filter(Boolean) };
 }
 
 function validateLesson(data) {
-  const title = typeof data?.lesson?.title === "string" ? data.lesson.title.trim().slice(0, 120) : "";
+  const title = typeof data?.lesson?.title === "string" ? cleanAiText(data.lesson.title).slice(0, 120) : "";
   const rawSections = Array.isArray(data?.lesson?.sections) ? data.lesson.sections : [];
   const sections = rawSections
     .map((section) => ({
-      heading: typeof section?.heading === "string" ? section.heading.trim().slice(0, 70) : "",
-      body: typeof section?.body === "string" ? section.body.trim().slice(0, 1800) : "",
-      example: typeof section?.example === "string" ? section.example.trim().slice(0, 900) : ""
+      heading: typeof section?.heading === "string" ? cleanAiText(section.heading).slice(0, 70) : "",
+      body: typeof section?.body === "string" ? cleanAiText(section.body).slice(0, 1800) : "",
+      example: typeof section?.example === "string" ? cleanAiText(section.example).slice(0, 900) : ""
     }))
     .filter((section) => section.heading && section.body);
   if (!title || sections.length < 3) {
@@ -1110,12 +1171,12 @@ function validateLesson(data) {
   // One question per section is the floor; the tutor can add more when a section needs deeper checking.
   const wanted = Number.isInteger(data.lesson.questionCount) ? data.lesson.questionCount : trimmed.length;
   const questionCount = Math.max(3, Math.min(10, Math.max(trimmed.length, wanted)));
-  const reply = typeof data.reply === "string" ? data.reply.trim().slice(0, 600) : "";
+  const reply = typeof data.reply === "string" ? cleanAiText(data.reply).slice(0, 600) : "";
   return { phase: "lesson", reply, lesson: { title, sections: trimmed, questionCount } };
 }
 
 function validateDoubt(data) {
-  const reply = typeof data?.reply === "string" ? data.reply.trim().slice(0, 1600) : "";
+  const reply = typeof data?.reply === "string" ? cleanAiText(data.reply).slice(0, 1600) : "";
   if (!reply) {
     throw invalidTutorStage("The AI tutor could not answer that question. Please try again.", "INVALID_TUTOR_DOUBT");
   }
@@ -1126,11 +1187,11 @@ function validateTutorReply(data) {
   if (!data || typeof data.reply !== "string" || !data.reply.trim() || !["correct", "partial", "incorrect", "question", "teaching"].includes(data.assessment)) {
     throw Object.assign(new Error("The AI tutor returned a response we could not use. Please try again."), { status: 502, code: "INVALID_TUTOR_RESPONSE" });
   }
-  const question = typeof data.question === "string" ? data.question.trim() : "";
+  const question = typeof data.question === "string" ? cleanAiText(data.question) : "";
   const activityTypes = ["multiple_choice", "fill_blank", "word_bank", "real_world"];
   const activityType = activityTypes.includes(data.activityType) ? data.activityType : "";
   const options = Array.isArray(data.options)
-    ? data.options.filter((option) => typeof option === "string").map((option) => option.trim()).filter(Boolean)
+    ? data.options.filter((option) => typeof option === "string").map(cleanAiText).filter(Boolean)
     : [];
   if (!question || !activityType || options.length < 3 || options.length > 6 || new Set(options.map((option) => option.toLowerCase())).size !== options.length) {
     console.warn(`[orbit] rejected tutor question shape: activity=${activityType || "?"} options=${options.length} question=${question ? "yes" : "no"}`);
@@ -1139,10 +1200,10 @@ function validateTutorReply(data) {
   const masteryDelta = Number.isInteger(data.masteryDelta) ? Math.max(0, Math.min(40, data.masteryDelta)) : 0;
   return {
     phase: "quiz",
-    reply: data.reply.trim(),
+    reply: cleanAiText(data.reply),
     assessment: data.assessment,
     masteryDelta,
-    question,
+    question: stripRepeatedOptions(question, options),
     activityType,
     options
   };
@@ -1153,7 +1214,7 @@ function validateVerdict(data) {
     throw Object.assign(new Error("The AI tutor returned a response we could not use. Please try again."), { status: 502, code: "INVALID_TUTOR_RESPONSE" });
   }
   const masteryDelta = Number.isInteger(data.masteryDelta) ? Math.max(0, Math.min(40, data.masteryDelta)) : 0;
-  return { phase: "verdict", reply: data.reply.trim(), assessment: data.assessment, masteryDelta };
+  return { phase: "verdict", reply: cleanAiText(data.reply), assessment: data.assessment, masteryDelta };
 }
 
 function aiStatus(tier) {
@@ -1528,10 +1589,10 @@ async function handleApi(request, response, pathname) {
       "Create a structured, encouraging skill-learning roadmap for one learner.",
       "Write the roadmap in the learner's language; when their notes are Hindi/Hinglish, use Hindi/Hinglish.",
       "The subject may be any legitimate skill; keep advice safe, accurate, practical, and appropriate for a beginner.",
-      "Build a genuinely comprehensive curriculum from foundations to independent, advanced mastery; a short overview is not enough.",
-      "Return 8 to 10 ordered phases (never fewer than 8), each containing 5 to 7 distinct, progressively challenging lessons (never fewer than 5). This is at least 40 real lessons, not a few broad topics split into filler.",
+      "Build a comprehensive curriculum from foundations to independent, advanced practice; a short overview is not enough.",
+      "Return exactly 8 ordered phases with exactly 5 distinct, progressively challenging lessons each - 40 real lessons, not a few broad topics split into filler.",
       "Sequence prerequisites carefully. Progress from essential vocabulary and fundamentals through core techniques, guided practice, realistic applications, advanced methods, troubleshooting or edge cases, and a substantial independent capstone; adapt these stages to the actual skill.",
-      "Each lesson needs a specific, observable objective, a practical exercise that builds on prior lessons, and an estimated duration in minutes. Avoid duplicate topics and generic filler. Make sections represent meaningful milestones, not arbitrary buckets.",
+      "Every field must be brief so the whole answer fits in one pass: lesson title up to 6 words, objective up to 18 words, exercise up to 18 words, and a duration in minutes. Plain text only - no markdown, no bullet lists, no semicolons joining several lessons into one.",
       "Cover the breadth needed for the learner's stated goal and make the path useful for moving from no prior knowledge toward independent, proficient work. Do not promise guaranteed mastery; the course provides a path and mastery depends on demonstrated practice.",
       "Adapt the roadmap to the learner's self-described level, placement notes, personal goal, and daily study time, while retaining clear prerequisite coverage and a path to advanced practice.",
       "If a learner requests a dangerous or illegal activity, redirect the curriculum toward safe, lawful, preventive, or educational alternatives.",
@@ -1543,7 +1604,7 @@ async function handleApi(request, response, pathname) {
       `Daily time target: ${dailyMinutes} minutes`,
       `Learner name: ${learnerName || "not provided"}`
     ].join("\n");
-    const data = await askModel(prompt, [{ role: "user", text: "Build my comprehensive, personalized learning curriculum from foundations through advanced practice." }], roadmapSchema, 10000, { tier: learner.tier });
+    const data = await askModel(prompt, [{ role: "user", text: "Build my comprehensive, personalized learning curriculum from foundations through advanced practice." }], roadmapSchema, 10000, { tier: learner.tier, timeoutMs: ROADMAP_TIMEOUT_MS });
     const roadmap = validateRoadmap(data);
     chargeAiUsage(learner.tier, learner.usageKey, route);
     // The path is in the learner's hands now, so a failed bookkeeping write must not take it back;
@@ -1894,6 +1955,8 @@ module.exports = {
   validateVerdict,
   validateDoubt,
   validateTutorReply,
+  validateRoadmap,
+  cleanAiText,
   resolveProviderModel,
   limitAiUsage,
   chargeAiUsage,

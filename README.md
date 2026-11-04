@@ -94,6 +94,8 @@ The monthly skill allowance is a second gate on `POST /api/roadmap`, counted in 
 
 A learner only spends budget on a reply they actually received: a request that fails at the provider, or returns a malformed lesson, is not charged.
 
+A roadmap is 40 lessons of JSON in one answer, which takes the model about 30 seconds and 2,200 output tokens (measured), so it gets its own 120-second timeout while a tutor reply keeps 30. Ask for more lessons or longer text and the answer stops fitting the 10,000-token budget: the JSON arrives cut off, `finish_reason` is `length`, and the learner gets an error instead of a path.
+
 ## Take payment with Razorpay
 
 Pro plans are bought inside the app and paid to your own Razorpay account. The browser never sees a secret.

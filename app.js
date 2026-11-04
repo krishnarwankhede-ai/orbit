@@ -331,13 +331,16 @@ async function apiRequest(endpoint, payload, method) {
   const requestUrl = configuredBaseUrl ? new URL(endpoint, `${configuredBaseUrl}/`).toString() : endpoint;
   const crossOrigin = Boolean(configuredBaseUrl && new URL(configuredBaseUrl).origin !== window.location.origin);
   let response;
+  // A learning path is the one request that is genuinely slow: 40 lessons of JSON, measured at
+  // about 30 seconds on a good day. The server allows 120, so the browser must not give up first.
+  const timeoutMs = endpoint === "/api/roadmap" ? 130_000 : 35_000;
   try {
     response = await fetch(requestUrl, {
       method: method || (payload ? "POST" : "GET"),
       headers: payload ? { "Content-Type": "application/json" } : {},
       body: payload ? JSON.stringify(payload) : undefined,
       credentials: crossOrigin ? "include" : "same-origin",
-      signal: AbortSignal.timeout(35_000)
+      signal: AbortSignal.timeout(timeoutMs)
     });
   } catch (error) {
     if (error.name === "TimeoutError") throw new Error("The request took too long. Please try again.");
@@ -993,7 +996,7 @@ function renderOnboardingPreview() {
     loading.className = "roadmap-loading";
     loading.textContent = roadmapError || (apiReady ? "Your AI tutor is building a learning path around your goal…" : "Connect the local server and add your AI provider key to generate an AI roadmap.");
     path.append(loading);
-    note.textContent = roadmapError ? "Your answers are saved here. Fix the AI connection and retry—Orbit won't invent a curriculum when the AI is unavailable." : "Orbit will ask the cloud AI to create your learning path. Your API key stays on your computer.";
+    note.textContent = roadmapError ? "Your answers are saved here. Fix the AI connection and retry—Orbit won't invent a curriculum when the AI is unavailable." : "Orbit asks the AI once for this path, and 40 lessons take it around half a minute. The path then stays yours to study.";
   }
   elements.onboardingContent.append(summary, path, note);
   if (!generatedRoadmap && !roadmapError) requestGeneratedRoadmap();

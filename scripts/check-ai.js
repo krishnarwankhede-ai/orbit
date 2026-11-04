@@ -14,7 +14,7 @@ process.env.AI_FALLBACK_PROVIDERS = "openai,anthropic,openrouter";
 const {
   askModel, providerChain, roadmapSchema, tutorSchema, resolveProviderModel, limitAiUsage, chargeAiUsage, dailyLimit,
   monthlySkillLimit, skillLimitPhrase, skillMonth, skillKeyOf, skillGate, saveSkillStart, requireAccountForSkill,
-  validateBrief, validateLesson, validateDoubt
+  validateBrief, validateLesson, validateDoubt, validateTutorReply, validateRoadmap, cleanAiText
 } = require("../server.js");
 
 const tutorReply = {
@@ -163,8 +163,47 @@ async function check() {
   checkUsageCaps();
   await checkSkillAllowance();
   checkLessonStage();
+  checkCleanOutput();
 
-  console.log("AI provider checks passed: gemini, openai, anthropic, openrouter tiers, quotas and free-plan caps.");
+  console.log("AI provider checks passed: gemini, openai, anthropic, openrouter tiers, quotas, free-plan caps and cleaned learner copy.");
+}
+
+function checkCleanOutput() {
+  assert.equal(cleanAiText("**Bold** start\\nnext\r\nthird"), "Bold start\nnext\nthird", "paired stars, escaped newlines and CRLF all become plain readable text");
+  assert.equal(cleanAiText("use *args and **kwargs** here"), "use *args and kwargs here", "a lone star that means a splat survives; only paired stars are dropped");
+  assert.equal(cleanAiText("## Heading\n`len()` and ```python\ncode```"), "Heading\nlen() and code", "heading hashes and code fences do not reach the learner");
+  assert.equal(cleanAiText("line   \n\n\n\nnext"), "line\n\nnext", "trailing spaces and three blank lines collapse to one break");
+
+  const reply = validateTutorReply({
+    reply: "**बहुत अच्छा!** एक और देखो",
+    assessment: "question",
+    question: "इनमें से कौन सही है? विकल्प: A. सेब B. केला C. आम",
+    activityType: "multiple_choice",
+    options: ["सेब", "केला", "आम"]
+  });
+  assert.equal(reply.reply, "बहुत अच्छा! एक और देखो", "markdown inside a tutor reply is cleaned");
+  assert.equal(reply.question, "इनमें से कौन सही है?", "the option list is not repeated inside the question the UI already shows as buttons");
+  assert.deepEqual(reply.options, ["सेब", "केला", "आम"], "the options themselves survive");
+
+  const plainQuestion = validateTutorReply({
+    reply: "ok", assessment: "question", question: "सेब के बारे में बताओ", activityType: "multiple_choice", options: ["सेब", "केला", "आम"]
+  });
+  assert.equal(plainQuestion.question, "सेब के बारे में बताओ", "a question that merely names an option keeps its stem");
+
+  const phases = Array.from({ length: 8 }, (_, phase) => ({
+    title: `**Phase ${phase}**`,
+    subtitle: `\\nStage ${phase}`,
+    concepts: Array.from({ length: 5 }, (_, lesson) => ({
+      title: `*Lesson ${phase}-${lesson}*`,
+      objective: `**Objective** ${phase}-${lesson}`,
+      exercise: `Exercise ${phase}-${lesson}`,
+      durationMinutes: 8
+    }))
+  }));
+  const roadmap = validateRoadmap({ courseName: "**Python**", level: "Beginner", placementSummary: "`new` learner", phases });
+  assert.equal(roadmap.courseName, "Python", "a roadmap course name is cleaned");
+  assert.equal(roadmap.phases[0].concepts[0].objective, "Objective 0-0", "every lesson the learner reads is cleaned");
+  assert.equal(roadmap.phases.length, 8, "the roadmap keeps all eight sections");
 }
 
 function checkLessonStage() {
