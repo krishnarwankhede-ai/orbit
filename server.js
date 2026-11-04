@@ -2053,8 +2053,7 @@ function serveStatic(response, pathname, request) {
         .toString("utf8")
         .replaceAll("{{siteUrl}}", origin)
         .replaceAll("{{seoJsonLd}}", seoJsonLd(request))
-        .replaceAll("{{planSummary}}", planSummary())
-        .replaceAll("{{googleVerify}}", readEnv("GOOGLE_SITE_VERIFICATION").trim());
+        .replaceAll("{{planSummary}}", planSummary());
     }
     response.writeHead(200, {
       "Cache-Control": "no-cache",
