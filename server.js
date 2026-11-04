@@ -22,7 +22,10 @@ const mimeTypes = {
   ".ico": "image/x-icon",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml"
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8"
 };
 
 function loadEnvFile() {
@@ -1862,6 +1865,26 @@ function renderLegalPage(fileName, info) {
   return template.replace(/\{\{([a-z_]+)\}\}/g, (match, key) => (key in replacements ? replacements[key] : ""));
 }
 
+// The tab icon is the same purple mark the sidebar draws, as SVG so no raster sizes are needed.
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Orbit">
+  <rect width="32" height="32" rx="9" fill="#7164dc"/>
+  <g fill="#ffffff" transform="rotate(-8 16 16)">
+    <rect x="7.4" y="18" width="3.6" height="7" rx="1.8"/>
+    <rect x="14.2" y="12" width="3.6" height="13" rx="1.8"/>
+    <rect x="21" y="16" width="3.6" height="9" rx="1.8"/>
+  </g>
+</svg>`;
+
+function sitemapXml(origin) {
+  const today = new Date().toISOString().slice(0, 10);
+  const urls = ["/", ...LEGAL_PAGES.keys()];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map((route) => `  <url><loc>${origin}${route}</loc><lastmod>${today}</lastmod></url>`).join("\n")}
+</urlset>
+`;
+}
+
 function serveStatic(response, pathname, request) {
   if (LEGAL_PAGES.has(pathname)) {
     let html;
@@ -1880,8 +1903,24 @@ function serveStatic(response, pathname, request) {
     response.end(request.method === "HEAD" ? "" : html);
     return;
   }
+  if (pathname === "/robots.txt" || pathname === "/sitemap.xml" || pathname === "/favicon.svg") {
+    const origin = siteInfo(request).siteUrl || requestOrigin(request);
+    const body = pathname === "/robots.txt"
+      ? `User-agent: *\nAllow: /\n\nSitemap: ${origin}/sitemap.xml\n`
+      : pathname === "/sitemap.xml"
+        ? sitemapXml(origin)
+        : FAVICON_SVG;
+    response.writeHead(200, {
+      "Cache-Control": "public, max-age=3600",
+      "Content-Type": mimeTypes[path.extname(pathname)] || "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer"
+    });
+    response.end(request.method === "HEAD" ? "" : body);
+    return;
+  }
   const requestPath = pathname === "/" ? "/index.html" : pathname;
-  const allowedFiles = new Set(["/index.html", "/app.js", "/styles.css", "/capacitor.js"]);
+  const allowedFiles = new Set(["/index.html", "/app.js", "/styles.css", "/capacitor.js", "/orbit-share.png"]);
   if (!allowedFiles.has(requestPath)) {
     jsonResponse(response, 404, { error: "Page not found." });
     return;
@@ -1894,13 +1933,17 @@ function serveStatic(response, pathname, request) {
       jsonResponse(response, 500, { error: "Could not read the app files." });
       return;
     }
+    // The share tags have to carry the deployed origin, which the static file cannot know.
+    const body = requestPath === "/index.html"
+      ? content.toString("utf8").replaceAll("{{siteUrl}}", siteInfo(request).siteUrl || requestOrigin(request))
+      : content;
     response.writeHead(200, {
       "Cache-Control": "no-cache",
       "Content-Type": mimeTypes[path.extname(filePath)] || "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer"
     });
-    response.end(content);
+    response.end(request.method === "HEAD" ? "" : body);
   });
 }
 
