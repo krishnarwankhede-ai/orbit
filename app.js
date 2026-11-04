@@ -332,8 +332,9 @@ async function apiRequest(endpoint, payload, method) {
   const crossOrigin = Boolean(configuredBaseUrl && new URL(configuredBaseUrl).origin !== window.location.origin);
   let response;
   // A learning path is the one request that is genuinely slow: 40 lessons of JSON, measured at
-  // about 30 seconds on a good day. The server allows 120, so the browser must not give up first.
-  const timeoutMs = endpoint === "/api/roadmap" ? 130_000 : 35_000;
+  // about 35 seconds. The server allows 120 per ask and asks once more when an answer comes back
+  // too thin, so the browser has to outlast the server rather than give up in front of it.
+  const timeoutMs = endpoint === "/api/roadmap" ? 200_000 : 35_000;
   try {
     response = await fetch(requestUrl, {
       method: method || (payload ? "POST" : "GET"),
@@ -996,7 +997,7 @@ function renderOnboardingPreview() {
     loading.className = "roadmap-loading";
     loading.textContent = roadmapError || (apiReady ? "Your AI tutor is building a learning path around your goal…" : "Connect the local server and add your AI provider key to generate an AI roadmap.");
     path.append(loading);
-    note.textContent = roadmapError ? "Your answers are saved here. Fix the AI connection and retry—Orbit won't invent a curriculum when the AI is unavailable." : "Orbit asks the AI once for this path, and 40 lessons take it around half a minute. The path then stays yours to study.";
+    note.textContent = roadmapError ? "Your answers are saved here. Fix the AI connection and retry—Orbit won't invent a curriculum when the AI is unavailable." : "Orbit asks the AI for 40 lessons in one go, which takes around half a minute. If the first answer comes back too thin it asks once more, so give it a minute before you retry.";
   }
   elements.onboardingContent.append(summary, path, note);
   if (!generatedRoadmap && !roadmapError) requestGeneratedRoadmap();

@@ -94,7 +94,9 @@ The monthly skill allowance is a second gate on `POST /api/roadmap`, counted in 
 
 A learner only spends budget on a reply they actually received: a request that fails at the provider, or returns a malformed lesson, is not charged.
 
-A roadmap is 40 lessons of JSON in one answer, which takes the model about 30 seconds and 2,200 output tokens (measured), so it gets its own 120-second timeout while a tutor reply keeps 30. Ask for more lessons or longer text and the answer stops fitting the 10,000-token budget: the JSON arrives cut off, `finish_reason` is `length`, and the learner gets an error instead of a path.
+A roadmap is 40 lessons of JSON in one answer, which takes the model about 35 seconds and 2,200 output tokens (measured), so it gets its own 120-second timeout while a tutor reply keeps 30, and the browser waits 200 seconds so it never gives up before the server does. Ask for more lessons or longer text and the answer stops fitting the 10,000-token budget: the JSON arrives cut off, `finish_reason` is `length`, and the learner gets an error instead of a path.
+
+Measured answers also over-shoot - 41 lessons with a repeated title, a phase holding four - so `validateRoadmap` repairs the shape instead of refusing it: a phase over eight lessons is cut, and lessons that repeat an earlier title or arrive without an objective or exercise are dropped. Only a path of under 30 lessons, or under five phases, is rejected, and then the AI is asked once more with the counts spelled out - unless the first answer already took over 70 seconds, because a learner should not wait three minutes. Every rejection logs what it counted (`[orbit] rejected roadmap: path too short: phases=3 lessons=12 dropped=8`); before that, Render's logs had nothing to say and the learner saw only "could not build a learning path".
 
 ## Take payment with Razorpay
 

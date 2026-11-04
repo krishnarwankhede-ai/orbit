@@ -204,6 +204,42 @@ function checkCleanOutput() {
   assert.equal(roadmap.courseName, "Python", "a roadmap course name is cleaned");
   assert.equal(roadmap.phases[0].concepts[0].objective, "Objective 0-0", "every lesson the learner reads is cleaned");
   assert.equal(roadmap.phases.length, 8, "the roadmap keeps all eight sections");
+
+  // The old rules turned "39 lessons and one repeated title" into an error screen after a thirty
+  // second wait, so near-misses are repaired instead of refused.
+  const repairable = Array.from({ length: 7 }, (_, phase) => ({
+    title: `Phase ${phase}`,
+    subtitle: `Stage ${phase}`,
+    concepts: Array.from({ length: phase === 0 ? 12 : 6 }, (_, lesson) => ({
+      title: lesson === 5 && phase === 6 ? "Lesson 0-0" : `Lesson ${phase}-${lesson}`,
+      objective: `Objective ${phase}-${lesson}`,
+      exercise: phase === 3 && lesson === 4 ? "" : `Exercise ${phase}-${lesson}`,
+      durationMinutes: 8
+    }))
+  }));
+  const repaired = validateRoadmap({ courseName: "Astronomy", placementSummary: "new", phases: repairable });
+  assert.equal(repaired.phases.length, 7, "a seven-phase answer is still a learning path");
+  assert.equal(repaired.phases[0].concepts.length, 8, "a phase longer than eight lessons is cut to eight");
+  assert.equal(repaired.phases[6].concepts.some((lesson) => lesson.title === "Lesson 0-0"), false, "a repeated lesson title is dropped, not shown twice");
+  assert.equal(repaired.phases[3].concepts.some((lesson) => lesson.exercise === ""), false, "a lesson missing its exercise is dropped");
+  assert.ok(repaired.phases.reduce((n, p) => n + p.concepts.length, 0) >= 30, "the path still holds enough lessons to study");
+
+  assert.throws(
+    () => validateRoadmap({ courseName: "X", placementSummary: "y", phases: Array.from({ length: 4 }, (_, phase) => ({
+      title: `Phase ${phase}`, subtitle: `Stage ${phase}`,
+      concepts: Array.from({ length: 5 }, (_, lesson) => ({ title: `Lesson ${phase}-${lesson}`, objective: "o", exercise: "e" }))
+    })) }),
+    (error) => error.code === "INVALID_ROADMAP",
+    "four phases is not a curriculum"
+  );
+  assert.throws(
+    () => validateRoadmap({ courseName: "X", placementSummary: "y", phases: Array.from({ length: 6 }, (_, phase) => ({
+      title: `Phase ${phase}`, subtitle: `Stage ${phase}`,
+      concepts: Array.from({ length: 4 }, (_, lesson) => ({ title: `Lesson ${lesson}`, objective: "o", exercise: "e" }))
+    })) }),
+    (error) => error.code === "INVALID_ROADMAP",
+    "twenty-four lessons with four repeats is too thin to sell"
+  );
 }
 
 function checkLessonStage() {

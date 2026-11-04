@@ -1043,6 +1043,18 @@ const doubtSchema = {
   required: ["reply"]
 };
 
+const ROADMAP_SHAPE = { minPhases: 5, maxPhases: 12, minLessons: 3, maxLessons: 8, minTotalLessons: 30 };
+
+function roadmapReject(reason) {
+  console.warn(`[orbit] rejected roadmap: ${reason}`);
+  return Object.assign(new Error("The AI could not build a complete learning path. Please try again."), { status: 502, code: "INVALID_ROADMAP" });
+}
+
+// Forty lessons is what Orbit sells, but the model often returns forty minus one, or repeats a
+// title, and rejecting the whole answer made the learner wait thirty seconds for an error. So the
+// shape is repaired wherever the fix is obvious - over-long phases and phases cut to size, repeated
+// or half-empty lessons dropped - and only a genuinely thin path is refused. Every refusal says why
+// in the log, because the learner's screen cannot carry the diagnosis.
 function validateRoadmap(input) {
   // Clean the copy the learner sees, not the copy being checked, so the length rules below still
   // count the lessons the model actually returned.
@@ -1066,35 +1078,36 @@ function validateRoadmap(input) {
       }))
     }
     : input;
-  if (!data || !Array.isArray(data.phases) || data.phases.length < 8 || data.phases.length > 12) {
-    throw Object.assign(new Error("The AI could not build a complete learning path. Please try again."), { status: 502, code: "INVALID_ROADMAP" });
+  if (!Array.isArray(data?.phases)) throw roadmapReject(`answer has no phase list (${typeof data?.phases})`);
+  if (data.phases.length < ROADMAP_SHAPE.minPhases || data.phases.length > ROADMAP_SHAPE.maxPhases) {
+    throw roadmapReject(`phase count out of range: phases=${data.phases.length}`);
   }
-  let totalConcepts = 0;
   const lessonTitles = new Set();
+  const phases = [];
+  let droppedLessons = 0;
   for (const phase of data.phases) {
-    if (typeof phase.title !== "string" || !phase.title.trim() || typeof phase.subtitle !== "string" || !phase.subtitle.trim()
-      || !Array.isArray(phase.concepts) || phase.concepts.length < 5 || phase.concepts.length > 8) {
-      throw Object.assign(new Error("The AI returned an incomplete learning path. Please try again."), { status: 502, code: "INVALID_ROADMAP" });
-    }
-    totalConcepts += phase.concepts.length;
-    for (const concept of phase.concepts) {
-      if (typeof concept.title !== "string" || !concept.title.trim()
-        || typeof concept.objective !== "string" || !concept.objective.trim()
-        || typeof concept.exercise !== "string" || !concept.exercise.trim()) {
-        throw Object.assign(new Error("The AI returned an incomplete lesson. Please try again."), { status: 502, code: "INVALID_ROADMAP" });
+    const concepts = [];
+    for (const concept of Array.isArray(phase.concepts) ? phase.concepts : []) {
+      const reusable = concept.title && concept.objective && concept.exercise && !lessonTitles.has(concept.title.toLowerCase());
+      if (!reusable || concepts.length >= ROADMAP_SHAPE.maxLessons) {
+        droppedLessons += 1;
+        continue;
       }
-      const lessonTitle = concept.title.trim().toLowerCase();
-      if (lessonTitles.has(lessonTitle)) {
-        throw Object.assign(new Error("The AI returned duplicate lessons instead of a complete learning path. Please try again."), { status: 502, code: "INVALID_ROADMAP" });
-      }
-      lessonTitles.add(lessonTitle);
+      lessonTitles.add(concept.title.toLowerCase());
       concept.durationMinutes = Math.max(3, Math.min(30, Number(concept.durationMinutes) || 8));
+      concepts.push(concept);
+    }
+    if (phase.title && phase.subtitle && concepts.length >= ROADMAP_SHAPE.minLessons) {
+      phases.push({ ...phase, concepts });
+    } else {
+      droppedLessons += concepts.length;
     }
   }
-  if (totalConcepts < 40) {
-    throw Object.assign(new Error("The AI returned a learning path that is too short to cover this skill in depth. Please try again."), { status: 502, code: "INVALID_ROADMAP" });
+  const totalLessons = phases.reduce((count, phase) => count + phase.concepts.length, 0);
+  if (totalLessons < ROADMAP_SHAPE.minTotalLessons) {
+    throw roadmapReject(`path too short: phases=${phases.length} lessons=${totalLessons} dropped=${droppedLessons}`);
   }
-  return data;
+  return { ...data, phases };
 }
 
 function cleanList(value, { min, max, maxLength }) {
@@ -1604,8 +1617,21 @@ async function handleApi(request, response, pathname) {
       `Daily time target: ${dailyMinutes} minutes`,
       `Learner name: ${learnerName || "not provided"}`
     ].join("\n");
-    const data = await askModel(prompt, [{ role: "user", text: "Build my comprehensive, personalized learning curriculum from foundations through advanced practice." }], roadmapSchema, 10000, { tier: learner.tier, timeoutMs: ROADMAP_TIMEOUT_MS });
-    const roadmap = validateRoadmap(data);
+    const askRoadmap = (task) => askModel(prompt, [{ role: "user", text: task }], roadmapSchema, 10000, { tier: learner.tier, timeoutMs: ROADMAP_TIMEOUT_MS });
+    const roadmapStartedAt = Date.now();
+    let roadmap;
+    try {
+      roadmap = validateRoadmap(await askRoadmap("Build my comprehensive, personalized learning curriculum from foundations through advanced practice."));
+    } catch (error) {
+      // A thin path is worth one more pass: the learner already waited, and the second answer costs
+      // about six paise. A slow first pass is not retried - the browser gives up before a third
+      // minute of waiting would help anyone.
+      if (error.code !== "INVALID_ROADMAP" || Date.now() - roadmapStartedAt > 70_000) throw error;
+      console.warn("[orbit] asking the AI for the learning path once more.");
+      roadmap = validateRoadmap(await askRoadmap(
+        "Build my learning curriculum in exactly 8 phases with 5 lessons in each phase. Every phase needs a title and a subtitle, every lesson a title, an objective and an exercise, and no lesson title may repeat another."
+      ));
+    }
     chargeAiUsage(learner.tier, learner.usageKey, route);
     // The path is in the learner's hands now, so a failed bookkeeping write must not take it back;
     // losing one row costs Orbit at most one free skill, rejecting the response costs the learner.
