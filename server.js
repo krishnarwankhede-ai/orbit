@@ -223,7 +223,7 @@ const billingPlans = {
     amountPaise: 39900,
     currency: "INR",
     periodDays: 30,
-    blurb: "Full AI tutor on a stronger model, with room for a lesson every day."
+    blurb: "The same tutor as the free plan, with far more requests each day."
   },
   yearly: {
     label: "Pro yearly",
@@ -1612,7 +1612,7 @@ function legalPlanRows() {
     "Free",
     "₹0",
     "No expiry",
-    "Try Orbit before paying. Lighter tutor model, 40 tutor requests and 2 learning paths a day."
+    `Try Orbit before paying. The same AI tutor, ${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} learning paths a day.`
   ];
   const rows = [free];
   for (const plan of Object.values(billingPlans)) {
