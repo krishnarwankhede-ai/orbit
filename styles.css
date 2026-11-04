@@ -448,8 +448,8 @@ h1, h2, h3, p { margin-top: 0; }
   .skill-list { position: fixed; inset: auto 0 61px; z-index: 4; display: flex; gap: 8px; overflow-x: auto; max-height: none; padding: 8px 62px 8px 12px; background: rgba(255,255,255,.97); border-top: 1px solid #efeff4; }
   .skill-list .skill-link { flex: 0 0 auto; width: auto; min-height: 38px; padding: 4px 10px; border: 1px solid #f0eff4; border-radius: 9px; }
   .skill-list .skill-link small { display: none; }
-  .sidebar-label.skills-label { position: fixed; inset: auto 0 61px; z-index: 5; display: flex; align-items: center; justify-content: flex-end; margin: 0; height: 74px; padding: 0 14px; font-size: 0; background: transparent; }
-  .sidebar-label.skills-label .tiny-add { width: 38px; height: 38px; border: 1px solid #ded9f6; border-radius: 10px; background: #fff; color: var(--purple-dark); font-size: 22px; line-height: 22px; box-shadow: 0 1px 4px rgba(36, 37, 58, .08); }
+  .sidebar-label.skills-label { position: fixed; inset: auto 0 61px; z-index: 5; display: flex; align-items: flex-end; justify-content: flex-end; margin: 0; padding: 8px 14px; font-size: 0; background: transparent; pointer-events: none; }
+  .sidebar-label.skills-label .tiny-add { pointer-events: auto; width: 38px; height: 38px; border: 1px solid #ded9f6; border-radius: 10px; background: #fff; color: var(--purple-dark); font-size: 22px; line-height: 22px; box-shadow: 0 1px 4px rgba(36, 37, 58, .08); }
   .main-content { margin-left: 0; padding-bottom: 142px; }
   .primary-nav { display: flex; justify-content: space-around; width: 100%; gap: 4px; }
   .nav-link { flex-direction: column; justify-content: center; gap: 2px; min-width: 80px; min-height: 48px; padding: 3px 8px; font-size: 9px; }
