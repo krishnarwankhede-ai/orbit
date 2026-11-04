@@ -107,10 +107,15 @@ const COURSES = {
 };
 
 const PROFILE_KEY = "orbit-learner-profile-v1";
-let profile = loadProfile();
+const LIBRARY_KEY = "orbit-skill-library-v1";
+const skillLibrary = loadLibrary();
+let profile = activeSkillPlan();
 let progress = loadProgress();
 let toastTimer;
 let lessonHistory = [];
+// Replies in flight are tied to the skill that asked for them; the counter lets a skill switch
+// drop a late tutor answer instead of writing it into the new skill's chat.
+let tutorContextId = 0;
 let tutorThinkingNode = null;
 let generatedRoadmap = profile?.curriculum || null;
 let roadmapRequestId = 0;
@@ -153,14 +158,126 @@ const elements = {
   onboardingActions: document.querySelector("#onboarding-actions")
 };
 
-function loadProfile() {
-  const saved = localStorage.getItem(PROFILE_KEY);
-  if (!saved) return null;
-  const parsed = JSON.parse(saved);
-  if (!parsed || typeof parsed !== "object" || !COURSES[parsed.skill]) {
-    throw new Error("Saved learning plan is invalid. Clear this site's browser data to start fresh.");
+function skillIdentity(plan) {
+  if (!plan?.skill) return "";
+  return plan.skill === "custom"
+    ? encodeURIComponent(String(plan.customSkill || "custom").toLowerCase().trim())
+    : plan.skill;
+}
+
+// Every skill a learner has started is kept forever - starting another one must never replace it.
+// Older browsers only have the single-plan blob, so that becomes the first entry of the library.
+function loadLibrary() {
+  const stored = JSON.parse(localStorage.getItem(LIBRARY_KEY) || "null");
+  const skills = Array.isArray(stored?.skills) ? stored.skills.filter((plan) => COURSES[plan?.skill]) : [];
+  const solo = localStorage.getItem(PROFILE_KEY);
+  if (solo) {
+    const parsed = JSON.parse(solo);
+    if (!parsed || typeof parsed !== "object" || !COURSES[parsed.skill]) {
+      throw new Error("Saved learning plan is invalid. Clear this site's browser data to start fresh.");
+    }
+    if (!skills.some((plan) => skillIdentity(plan) === skillIdentity(parsed))) skills.push(parsed);
   }
-  return parsed;
+  const active = skills.find((plan) => skillIdentity(plan) === stored?.activeId) || skills[0];
+  return { activeId: skillIdentity(active), skills };
+}
+
+function activeSkillPlan() {
+  return skillLibrary.skills.find((plan) => skillIdentity(plan) === skillLibrary.activeId) || skillLibrary.skills[0] || null;
+}
+
+function saveLibrary() {
+  skillLibrary.activeId = skillIdentity(profile);
+  localStorage.setItem(LIBRARY_KEY, JSON.stringify(skillLibrary));
+  if (profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
+function planOf(id) {
+  return skillLibrary.skills.find((plan) => skillIdentity(plan) === id) || null;
+}
+
+function upsertSkill(plan) {
+  const id = skillIdentity(plan);
+  const index = skillLibrary.skills.findIndex((existing) => skillIdentity(existing) === id);
+  if (index >= 0) skillLibrary.skills[index] = plan;
+  else skillLibrary.skills.push(plan);
+  profile = plan;
+  saveLibrary();
+}
+
+function skillProgressPercent(plan) {
+  try {
+    const saved = readProgressFor(plan);
+    if (!saved) return 0;
+    return Math.round((saved.masteredConcepts.length / (getConcepts(plan).length || 1)) * 100);
+  } catch {
+    return 0;
+  }
+}
+
+function resetTutorView() {
+  lessonHistory = [];
+  elements.chat.replaceChildren();
+  elements.answer.value = "";
+  elements.answer.disabled = false;
+  elements.send.disabled = false;
+  document.querySelector("#lesson-next").hidden = true;
+  setTutorThinking(false);
+  lessonStartedAt = Date.now();
+}
+
+function selectSkill(id) {
+  const plan = planOf(id);
+  if (!plan || id === skillIdentity(profile)) return;
+  skillLibrary.activeId = id;
+  profile = plan;
+  progress = loadProgress(plan);
+  generatedRoadmap = plan.curriculum || null;
+  roadmapError = "";
+  tutorContextId += 1;
+  tutorRequestInFlight = false;
+  saveLibrary();
+  resetTutorView();
+  renderCourseDetails();
+  renderProgress();
+  renderRoadmap();
+  showView("lesson");
+  showToast(`Switched to ${getCourse().name}. Your other skills stay in the sidebar.`);
+}
+
+function renderSkills() {
+  const container = document.querySelector("#skill-list");
+  if (!container) return;
+  const activeId = skillIdentity(profile);
+  container.replaceChildren();
+  // On a phone the list becomes a strip above the tab bar, and one skill is not worth a strip.
+  container.classList.toggle("is-solo", skillLibrary.skills.length < 2);
+  skillLibrary.skills.forEach((plan) => {
+    const id = skillIdentity(plan);
+    const course = getCourse(plan);
+    const percent = skillProgressPercent(plan);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `skill-link${id === activeId ? " is-selected" : ""}`;
+    button.setAttribute("aria-pressed", String(id === activeId));
+    button.title = id === activeId ? `${course.name} - open now` : `Switch to ${course.name}`;
+    if (id !== activeId) button.addEventListener("click", () => selectSkill(id));
+    const icon = document.createElement("span");
+    icon.className = "skill-icon python-icon";
+    icon.textContent = course.icon;
+    const copy = document.createElement("span");
+    copy.className = "skill-link-copy";
+    const name = document.createElement("strong");
+    name.textContent = course.name;
+    const detail = document.createElement("small");
+    const level = plan.level || "Beginner path";
+    detail.textContent = percent ? `${level} · ${percent}% done` : level;
+    copy.append(name, detail);
+    const status = document.createElement("span");
+    status.className = "skill-status";
+    button.append(icon, copy, status);
+    container.append(button);
+  });
 }
 
 function getCourse(plan = profile) {
@@ -255,10 +372,17 @@ function getPhases(plan = profile) {
   return coursePhases;
 }
 
-function loadProgress() {
-  const key = progressStorageKey();
-  const saved = localStorage.getItem(key) || (profile?.skill === "python" ? localStorage.getItem(STORAGE_KEY) : null);
-  if (!saved) return { ...DEFAULT_PROGRESS, masteredConcepts: [] };
+function loadProgress(plan = profile) {
+  return readProgressFor(plan) || { ...DEFAULT_PROGRESS, masteredConcepts: [] };
+}
+
+// A skill that has never been opened here has no progress blob yet, which the cloud snapshot and the
+// sidebar both need to tell apart from a skill with progress saved.
+function readProgressFor(plan = profile) {
+  if (!plan) return null;
+  const key = progressStorageKey(plan);
+  const saved = localStorage.getItem(key) || (plan.skill === "python" ? localStorage.getItem(STORAGE_KEY) : null);
+  if (!saved) return null;
   const parsed = JSON.parse(saved);
   if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.masteredConcepts)) {
     throw new Error("Saved learning progress is invalid. Clear this site's browser data to start fresh.");
@@ -287,10 +411,8 @@ function normalizeProgress(saved) {
 }
 
 function progressStorageKey(plan = profile) {
-  const identifier = plan?.skill === "custom"
-    ? encodeURIComponent(String(plan.customSkill || "custom").toLowerCase().trim())
-    : plan?.skill;
-  return plan ? `orbit-progress-${identifier}-v1` : STORAGE_KEY;
+  const identifier = skillIdentity(plan);
+  return identifier ? `orbit-progress-${identifier}-v1` : STORAGE_KEY;
 }
 
 function saveProgress() {
@@ -620,18 +742,52 @@ function openAccountDialog() {
   document.querySelector("#account-dialog").showModal();
 }
 
+function normalizeCloudLibrary(state) {
+  const rawPlans = Array.isArray(state?.profile?.skills) ? state.profile.skills : [state?.profile];
+  const skills = rawPlans.filter((plan) => plan && typeof plan === "object" && COURSES[plan.skill]);
+  if (!skills.length) return null;
+  const storedProgress = state?.progress?.bySkill && typeof state.progress.bySkill === "object"
+    ? state.progress.bySkill
+    : null;
+  const progressBySkill = {};
+  skills.forEach((plan) => {
+    const id = skillIdentity(plan);
+    // A one-skill cloud row saved before the library existed stores its progress directly.
+    const blob = storedProgress ? storedProgress[id] : (id === skillIdentity(skills[0]) ? state.progress : null);
+    if (blob && Array.isArray(blob.masteredConcepts)) progressBySkill[id] = normalizeProgress(blob);
+  });
+  const activeId = skills.some((plan) => skillIdentity(plan) === state?.profile?.activeId)
+    ? state.profile.activeId
+    : skillIdentity(skills[0]);
+  return { activeId, skills, progress: progressBySkill };
+}
+
 function applyCloudState(state) {
-  if (!state?.profile || !state?.progress
-    || !COURSES[state.profile.skill]
-    || !Array.isArray(state.progress.masteredConcepts)) {
-    throw new Error("Your cloud learning data is incomplete. Your local copy has been kept unchanged.");
-  }
-  profile = state.profile;
-  progress = normalizeProgress(state.progress);
-  generatedRoadmap = profile.curriculum || null;
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  localStorage.setItem(progressStorageKey(profile), JSON.stringify(progress));
+  const cloud = normalizeCloudLibrary(state);
+  if (!cloud) throw new Error("Your cloud learning data is incomplete. Your local copy has been kept unchanged.");
+  cloud.skills.forEach((plan) => {
+    const id = skillIdentity(plan);
+    const local = planOf(id);
+    if (!local) {
+      skillLibrary.skills.push(plan);
+      if (cloud.progress[id]) localStorage.setItem(progressStorageKey(plan), JSON.stringify(cloud.progress[id]));
+      return;
+    }
+    const cloudIsNewer = new Date(plan.updatedAt || 0) > new Date(local.updatedAt || 0);
+    if (cloudIsNewer) {
+      skillLibrary.skills[skillLibrary.skills.indexOf(local)] = plan;
+      if (cloud.progress[id]) localStorage.setItem(progressStorageKey(plan), JSON.stringify(cloud.progress[id]));
+    }
+  });
+  if (skillLibrary.skills.some((plan) => skillIdentity(plan) === cloud.activeId)) skillLibrary.activeId = cloud.activeId;
+  profile = activeSkillPlan();
+  progress = loadProgress(profile);
+  generatedRoadmap = profile?.curriculum || null;
+  tutorContextId += 1;
+  saveLibrary();
+  resetTutorView();
   renderCourseDetails();
+  renderSkills();
   renderProgress();
   renderRoadmap();
   if (elements.onboarding && !elements.onboarding.hidden) {
@@ -724,10 +880,30 @@ async function initializeAccount() {
   }
 }
 
+function cloudSnapshot() {
+  const activeId = skillIdentity(profile);
+  const progressBySkill = {};
+  skillLibrary.skills.forEach((plan) => {
+    const id = skillIdentity(plan);
+    let saved;
+    // One unreadable blob for a skill that is not on screen must not freeze syncing for the rest.
+    try {
+      saved = id === activeId ? progress : readProgressFor(plan);
+    } catch {
+      saved = null;
+    }
+    if (saved) progressBySkill[id] = saved;
+  });
+  return JSON.parse(JSON.stringify({
+    profile: { version: 2, activeId, skills: skillLibrary.skills },
+    progress: { version: 2, bySkill: progressBySkill }
+  }));
+}
+
 function queueCloudSave() {
   if (!cloudSyncReady || !accountUser || !profile) return;
   const userId = accountUser.id;
-  const snapshot = JSON.parse(JSON.stringify({ profile, progress }));
+  const snapshot = cloudSnapshot();
   clearTimeout(cloudSaveTimer);
   cloudSaveTimer = setTimeout(() => {
     cloudSaveQueue = cloudSaveQueue.catch(() => {}).then(async () => {
@@ -1096,39 +1272,37 @@ function resumeSkillStart() {
   renderOnboarding();
 }
 
-function openOnboarding() {
-  onboardingStep = profile && !hasComprehensiveCurriculum(profile) ? 5 : 0;
+// "add" starts a different skill next to the ones already owned, "editId" reopens one of them,
+// and no options at all is the original "update my plan" for the skill on screen.
+function openOnboarding(options = {}) {
+  const editing = options.add ? null : (options.editId ? planOf(options.editId) : profile);
+  onboardingStep = editing && !hasComprehensiveCurriculum(editing) ? 5 : 0;
   roadmapError = "";
   skillGateWait = "";
   generatedRoadmap = null;
   roadmapRequestId += 1;
-  const savedLevel = { Beginner: "new", Intermediate: "some", Advanced: "comfortable" }[profile?.level] || "";
+  const savedLevel = { Beginner: "new", Intermediate: "some", Advanced: "comfortable" }[editing?.level] || "";
   onboardingState = {
-    name: profile?.name || "",
-    skill: profile?.skill || "",
-    level: profile?.selfLevel || savedLevel,
-    customSkill: profile?.customSkill || "",
-    quizAnswer: profile?.quizAnswer ?? -1,
-    placementNotes: profile?.placementNotes || "",
-    goal: profile?.goal || "",
-    customGoal: profile?.customGoal || "",
-    minutes: profile?.minutes || 10
+    name: editing?.name || profile?.name || "",
+    skill: editing?.skill || "",
+    level: editing?.selfLevel || savedLevel,
+    customSkill: editing?.customSkill || "",
+    quizAnswer: editing?.quizAnswer ?? -1,
+    placementNotes: editing?.placementNotes || "",
+    goal: editing?.goal || "",
+    customGoal: editing?.customGoal || "",
+    minutes: editing?.minutes || 10
   };
   elements.onboarding.hidden = false;
   document.querySelector(".app-shell").hidden = true;
-  document.querySelector("#onboarding-cancel").hidden = !profile;
+  document.querySelector("#onboarding-cancel").hidden = !activeSkillPlan();
   renderOnboarding();
 }
 
 function completeOnboarding() {
   const course = COURSES[onboardingState.skill];
   const correct = onboardingState.skill === "custom" || Number(onboardingState.quizAnswer) === course.quiz.answer;
-  const previousProfile = profile;
-  const previousProgress = progress;
-  const unchangedCurriculum = profile?.skill === onboardingState.skill
-    && profile?.customSkill === onboardingState.customSkill
-    && JSON.stringify(profile?.curriculum) === JSON.stringify(generatedRoadmap);
-  profile = {
+  const nextPlan = {
     ...onboardingState,
     curriculum: generatedRoadmap,
     quizAnswer: Number(onboardingState.quizAnswer),
@@ -1138,19 +1312,22 @@ function completeOnboarding() {
     placement: correct ? "Quick check passed" : "Starting with the fundamentals",
     updatedAt: new Date().toISOString()
   };
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  if (!unchangedCurriculum) {
-    progress = carryProgressToCurriculum(previousProfile, previousProgress, profile);
-    saveProgress();
-  } else {
-    progress = loadProgress();
-  }
+  const previousPlan = planOf(skillIdentity(nextPlan));
+  const previousProgress = readProgressFor(nextPlan) || { ...DEFAULT_PROGRESS, masteredConcepts: [] };
+  const unchangedCurriculum = previousPlan
+    && JSON.stringify(previousPlan.curriculum) === JSON.stringify(nextPlan.curriculum);
+  profile = nextPlan;
+  progress = unchangedCurriculum ? previousProgress : carryProgressToCurriculum(previousPlan, previousProgress, nextPlan);
+  upsertSkill(nextPlan);
+  saveProgress();
+  tutorContextId += 1;
+  resetTutorView();
   elements.onboarding.hidden = true;
   document.querySelector(".app-shell").hidden = false;
   renderCourseDetails();
+  renderSkills();
   renderProgress();
   renderAccountPanel();
-  queueCloudSave();
   showView("dashboard");
   if (!course.lesson) showView("roadmap");
 }
@@ -1180,10 +1357,7 @@ function renderCourseDetails() {
     : "Your goals, your pace. Let’s make a little progress today.";
   document.querySelector("#journey-subtitle").textContent = `${course.name} · ${profile?.level || "Beginner"} · ${profile?.minutes || 10} min/day`;
   document.querySelector("#daily-goal-note").textContent = `Your daily target: ${profile?.minutes || 10} focused minutes. Every small session counts.`;
-  const skillLink = document.querySelector(".skill-link");
-  skillLink.querySelector(".python-icon").textContent = course.icon;
-  skillLink.querySelector(".skill-link-copy strong").textContent = course.name;
-  skillLink.querySelector(".skill-link-copy small").textContent = profile?.level || "Beginner path";
+  renderSkills();
   const needsCurriculumExpansion = Boolean(profile) && !hasComprehensiveCurriculum(profile);
   document.querySelector("#curriculum-depth-note").hidden = !needsCurriculumExpansion;
   document.querySelector("#edit-plan").textContent = needsCurriculumExpansion ? "Expand my learning path" : "Update my learning plan";
@@ -1926,6 +2100,7 @@ async function requestTutorReply(mode, userMessage = "", sourceChallenge = null)
   // Every phase of a session costs an AI call the learner is budgeted for, so a double tap must not fire two.
   if (tutorRequestInFlight) return;
   tutorRequestInFlight = true;
+  const contextId = tutorContextId;
   const concept = getCurrentConcept();
   const course = getCourse();
   // A resumed quiz starts on the tutor's own question, and dropping that turn would leave the
@@ -1964,6 +2139,9 @@ async function requestTutorReply(mode, userMessage = "", sourceChallenge = null)
       history,
       deviceId: learnerDeviceId()
     });
+    // A learner can switch skills while this reply is travelling, and an answer about the skill they
+    // left must not land in the chat - or the session - of the one they opened.
+    if (contextId !== tutorContextId) return;
     sourceChallenge?.querySelectorAll(".answer-option, .word-token, .word-bank-check, .challenge-check").forEach((option) => {
       option.disabled = true;
       if (option.matches("[data-answer-option]")) {
@@ -2048,6 +2226,7 @@ async function requestTutorReply(mode, userMessage = "", sourceChallenge = null)
     addMessage("tutor", result.reply, true, userMessage ? result.assessment : "", result.question, result.options, result.activityType);
     renderQuizMeter();
   } catch (error) {
+    if (contextId !== tutorContextId) return;
     if (userMessage && lessonHistory.at(-1)?.role === "user") lessonHistory.pop();
     sourceChallenge?.resetSelection?.();
     sourceChallenge?.querySelectorAll(".answer-option, .word-token").forEach((option) => {
@@ -2057,10 +2236,12 @@ async function requestTutorReply(mode, userMessage = "", sourceChallenge = null)
     if (error.code === "AI_BUDGET_EXCEEDED") openPlansDialog(error.message);
     else showToast(error.message);
   } finally {
-    tutorRequestInFlight = false;
-    setTutorThinking(false);
-    if (progress.phase !== "complete") {
-      updateSessionStep();
+    if (contextId === tutorContextId) {
+      tutorRequestInFlight = false;
+      setTutorThinking(false);
+      if (progress.phase !== "complete") {
+        updateSessionStep();
+      }
     }
   }
 }
@@ -2200,10 +2381,8 @@ function openConcept(index) {
   progress.mastery = Number(progress.masteryByConcept?.[conceptIndex]) || 0;
   progress.phase = progress.masteredConcepts.includes(conceptIndex) ? "complete" : "reflection";
   saveProgress();
-  lessonHistory = [];
-  elements.chat.replaceChildren();
-  elements.answer.disabled = false;
-  elements.send.disabled = false;
+  tutorContextId += 1;
+  resetTutorView();
   renderLessonDetails();
   renderProgress();
   showView("lesson");
@@ -2243,10 +2422,10 @@ document.querySelector(".tiny-add").addEventListener("click", () => {
     return;
   }
   if (skillsLeft === 0) {
-    openPlansDialog("You have used this month's free skill. Pro unlocks unlimited skills, and you keep studying the one you started.");
+    openPlansDialog("You have used this month's free skill. Pro unlocks unlimited skills, and the ones you started stay in your sidebar to switch back to.");
     return;
   }
-  openOnboarding();
+  openOnboarding({ add: true });
 });
 document.querySelector(".notification-button").addEventListener("click", () => {
   showToast("You’re all caught up. Come back anytime to keep learning.");
@@ -2375,7 +2554,7 @@ document.querySelector("#account-signout").addEventListener("click", async () =>
   }
 });
 
-document.querySelector("#edit-plan").addEventListener("click", openOnboarding);
+document.querySelector("#edit-plan").addEventListener("click", () => openOnboarding());
 document.querySelector("#phase-list").addEventListener("click", (event) => {
   const row = event.target.closest("[data-concept-index]");
   if (row && row.getAttribute("role") === "button") openConcept(row.dataset.conceptIndex);

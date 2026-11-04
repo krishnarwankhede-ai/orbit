@@ -7,7 +7,10 @@ const crypto = require("node:crypto");
 
 const ROOT = __dirname;
 const MAX_BODY_BYTES = 64 * 1024;
-const MAX_CLOUD_STATE_BYTES = 48 * 1024;
+// A learner's whole skill library syncs as one blob, and each generated path is around 15 KB, so the
+// state route gets its own ceiling rather than loosening the limit on every other endpoint.
+const MAX_STATE_BODY_BYTES = 512 * 1024;
+const MAX_CLOUD_STATE_BYTES = 480 * 1024;
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_MESSAGE_LENGTH = 2000;
 const RATE_LIMIT = 30;
@@ -62,8 +65,8 @@ function readBodyText(request, maxBytes = MAX_BODY_BYTES) {
   });
 }
 
-function readJsonBody(request) {
-  return readBodyText(request).then((text) => {
+function readJsonBody(request, maxBytes = MAX_BODY_BYTES) {
+  return readBodyText(request, maxBytes).then((text) => {
     try {
       return JSON.parse(text);
     } catch {
@@ -640,13 +643,21 @@ function skillWriteKey() {
   return readEnv("SUPABASE_SERVICE_ROLE_KEY").trim();
 }
 
-async function listSkillsThisMonth(userId) {
+// A learner keeps every skill they start, so the gate needs two different facts from one read: the
+// names ever started (free to reopen in any month) and the names first started this month (what the
+// allowance is actually spent on).
+async function listSkillRows(userId) {
   const serviceKey = skillWriteKey();
   if (!serviceKey) throw Object.assign(new Error("SUPABASE_SERVICE_ROLE_KEY is not set."), { code: "SKILL_STORE_NOT_CONFIGURED" });
-  const query = `/rest/v1/learner_skill?select=skill_key&user_id=eq.${encodeURIComponent(userId)}&month=eq.${skillMonth()}`;
+  const query = `/rest/v1/learner_skill?select=skill_key,month&user_id=eq.${encodeURIComponent(userId)}&order=month.desc&limit=200`;
   const { response, payload } = await supabaseRequest(query, { serviceKey });
-  throwSupabaseError(response, payload, "Could not read your skills for this month.", "SKILL_STORE_READ_FAILED");
-  return new Set((Array.isArray(payload) ? payload : []).map((row) => row.skill_key));
+  throwSupabaseError(response, payload, "Could not read your skills.", "SKILL_STORE_READ_FAILED");
+  const rows = Array.isArray(payload) ? payload : [];
+  const currentMonth = skillMonth();
+  return {
+    ever: new Set(rows.map((row) => row.skill_key)),
+    thisMonth: new Set(rows.filter((row) => row.month === currentMonth).map((row) => row.skill_key))
+  };
 }
 
 async function saveSkillStart(userId, skillKey) {
@@ -661,24 +672,28 @@ async function saveSkillStart(userId, skillKey) {
 
 // Returns the skills the learner may still start, or null when the cap could not be checked.
 // Supabase being down must not stop someone from studying, so an outage opens the gate and logs.
+// `isNew` tells the caller whether this answer spent the month's allowance, so reopening a skill the
+// learner already owns never silently eats the one free skill of a new month.
 async function skillGate(learner, skillKey) {
   const limit = monthlySkillLimit(learner.tier);
-  if (limit === null) return { allowed: true, limit, used: null };
-  if (!accountIsConfigured() || !learner.userId) return { allowed: true, limit, used: null };
-  let started;
+  if (limit === null) return { allowed: true, limit, used: null, isNew: true };
+  if (!accountIsConfigured() || !learner.userId) return { allowed: true, limit, used: null, isNew: true };
+  let owned;
   try {
-    started = await listSkillsThisMonth(learner.userId);
+    owned = await listSkillRows(learner.userId);
   } catch (error) {
     console.warn(`[orbit] skill cap not checked: ${error.message}`);
-    return { allowed: true, limit, used: null };
+    return { allowed: true, limit, used: null, isNew: true };
   }
-  if (started.has(skillKey) || started.size < limit) return { allowed: true, limit, used: started.size };
+  if (owned.ever.has(skillKey)) return { allowed: true, limit, used: owned.thisMonth.size, isNew: false };
+  if (owned.thisMonth.size < limit) return { allowed: true, limit, used: owned.thisMonth.size, isNew: true };
   return {
     allowed: false,
     limit,
     used: limit,
+    isNew: true,
     error: Object.assign(
-      new Error(`The free plan teaches ${limit} new skill a month. Pro unlocks unlimited skills - the ${limit} you started stay yours to keep studying.`),
+      new Error(`The free plan teaches ${limit} new skill a month. Pro unlocks unlimited skills - the skills you started stay yours to keep studying.`),
       { status: 429, code: "SKILL_LIMIT_REACHED" }
     )
   };
@@ -1268,7 +1283,7 @@ async function handleApi(request, response, pathname) {
     let skillsUsed = null;
     if (learner.userId && accountIsConfigured()) {
       // The settings pill answers even when Supabase is unreachable; the skill count simply hides.
-      try { skillsUsed = (await listSkillsThisMonth(learner.userId)).size; } catch { skillsUsed = null; }
+      try { skillsUsed = (await listSkillRows(learner.userId)).thisMonth.size; } catch { skillsUsed = null; }
     }
     jsonResponse(response, 200, {
       ...status,
@@ -1551,7 +1566,7 @@ async function handleApi(request, response, pathname) {
       jsonResponse(response, 401, { error: "Please sign in to sync your learning progress.", code: "AUTH_REQUIRED" }, cookieHeaders ? { "Set-Cookie": cookieHeaders } : {});
       return;
     }
-    const body = await readJsonBody(request);
+    const body = await readJsonBody(request, MAX_STATE_BODY_BYTES);
     if (!body.profile || typeof body.profile !== "object" || Array.isArray(body.profile)
       || !body.progress || typeof body.progress !== "object" || Array.isArray(body.progress)
       || Buffer.byteLength(JSON.stringify({ profile: body.profile, progress: body.progress }), "utf8") > MAX_CLOUD_STATE_BYTES) {
@@ -1635,8 +1650,10 @@ async function handleApi(request, response, pathname) {
     chargeAiUsage(learner.tier, learner.usageKey, route);
     // The path is in the learner's hands now, so a failed bookkeeping write must not take it back;
     // losing one row costs Orbit at most one free skill, rejecting the response costs the learner.
+    // Reopening a skill the learner already owns is not a new start, so it records nothing and the
+    // month's allowance stays free for a genuinely new skill.
     try {
-      await saveSkillStart(learner.userId, skillKey);
+      if (gate.isNew) await saveSkillStart(learner.userId, skillKey);
     } catch (error) {
       console.warn(`[orbit] skill start not recorded: ${error.message}`);
     }

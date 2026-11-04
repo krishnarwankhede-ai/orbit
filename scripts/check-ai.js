@@ -327,10 +327,10 @@ async function checkSkillAllowance() {
       rows.add(`${row.user_id}|${row.month}|${row.skill_key}`);
       return { ok: true, status: 201, json: async () => [] };
     }
-    const month = decodeURIComponent(url).match(/month=eq\.(\d{4}-\d{2})/)?.[1];
     const owned = [...rows]
-      .filter((entry) => entry.split("|")[0] === "learner-1" && entry.split("|")[1] === month)
-      .map((entry) => ({ skill_key: entry.split("|")[2] }));
+      .map((entry) => entry.split("|"))
+      .filter(([userId, , skillKey]) => userId === "learner-1" && skillKey)
+      .map(([, month, skill_key]) => ({ month, skill_key }));
     return { ok: true, status: 200, json: async () => owned };
   };
 
@@ -343,15 +343,27 @@ async function checkSkillAllowance() {
   assert.notEqual(skillKeyOf("python for beginners"), skillKeyOf("python"), "a differently named skill is a different skill");
 
   const free = { tier: "free", userId: "learner-1", usageKey: "user:learner-1", planSource: "account" };
-  assert.equal((await skillGate(free, "python")).allowed, true, "an untouched month leaves the free skill open");
+  const firstOpen = await skillGate(free, "python");
+  assert.equal(firstOpen.allowed, true, "an untouched month leaves the free skill open");
+  assert.equal(firstOpen.isNew, true, "a name never started before is a new start");
   await saveSkillStart("learner-1", "python");
-  assert.equal((await skillGate(free, "python")).allowed, true, "rebuilding the path of a skill already started spends nothing");
+  const rebuild = await skillGate(free, "python");
+  assert.equal(rebuild.allowed, true, "rebuilding the path of a skill already started spends nothing");
+  assert.equal(rebuild.isNew, false, "a skill the learner owns writes no second row for the month");
   const refused = await skillGate(free, "excel");
   assert.equal(refused.allowed, false, "a second new skill in the same month is refused");
   assert.equal(refused.error.code, "SKILL_LIMIT_REACHED");
   assert.equal(refused.error.status, 429);
   assert.match(refused.error.message, /free plan/i, "the refusal names the plan so the upgrade reads as the way out");
   assert.equal((await skillGate({ tier: "paid", userId: "learner-2", planSource: "account" }, "excel")).allowed, true, "Pro starts as many skills as they like");
+
+  // A skill started in an earlier month belongs to the learner forever: switching back to it is free
+  // and must not spend the new month's allowance either.
+  rows.add("learner-1|2020-01|sql");
+  const reopened = await skillGate(free, "sql");
+  assert.equal(reopened.allowed, true, "a skill from an older month is always open again");
+  assert.equal(reopened.isNew, false, "returning to an owned skill is not counted as starting one");
+  assert.equal(reopened.used, 1, "the month still shows only the skills genuinely new to it");
 
   const write = requests.find((entry) => entry.method === "POST");
   assert.equal(write.headers.Authorization, "Bearer test-service-key", "the count is written with the service key, so a learner's own token cannot rewrite it");

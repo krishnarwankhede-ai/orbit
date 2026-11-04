@@ -44,6 +44,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px sol
 .tiny-add { width: 20px; height: 20px; padding: 0; border: 1px solid #e8e7ef; border-radius: 6px; background: #fff; color: #9797a7; font-size: 16px; line-height: 16px; cursor: pointer; }
 .skill-link { gap: 10px; min-height: 50px; padding: 5px 9px; }
 .skill-link.is-selected { background: #faf9ff; }
+.skill-list { display: grid; gap: 3px; max-height: 42vh; overflow-y: auto; }
 .python-icon { display: inline-grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: #edf2ff; color: #5461b6; font-family: Manrope, sans-serif; font-size: 11px; font-weight: 800; letter-spacing: -.5px; }
 .skill-link-copy, .profile-copy { display: grid; gap: 2px; }
 .skill-link-copy strong, .profile-copy strong { color: #4a4b60; font-size: 12px; font-weight: 700; }
@@ -443,11 +444,15 @@ h1, h2, h3, p { margin-top: 0; }
 }
 @media (max-width: 760px) {
   .sidebar { position: fixed; inset: auto 0 0; flex-direction: row; align-items: center; justify-content: space-around; width: auto; height: 61px; padding: 5px 10px max(5px, env(safe-area-inset-bottom)); border-top: 1px solid #efeff4; border-right: 0; background: rgba(255,255,255,.97); }
-  .brand, .sidebar-label, .skill-link, .sidebar-spacer, .sidebar-help, .profile-button { display: none; }
+  .brand, .sidebar-label, .sidebar-spacer, .sidebar-help, .profile-button { display: none; }
+  .skill-list { position: fixed; inset: auto 0 61px; z-index: 4; display: flex; gap: 8px; overflow-x: auto; max-height: none; padding: 8px 12px; background: rgba(255,255,255,.97); border-top: 1px solid #efeff4; }
+  .skill-list.is-solo { display: none; }
+  .skill-list .skill-link { flex: 0 0 auto; width: auto; min-height: 38px; padding: 4px 10px; border: 1px solid #f0eff4; border-radius: 9px; }
+  .skill-list .skill-link small { display: none; }
+  .main-content { margin-left: 0; padding-bottom: 118px; }
   .primary-nav { display: flex; justify-content: space-around; width: 100%; gap: 4px; }
   .nav-link { flex-direction: column; justify-content: center; gap: 2px; min-width: 80px; min-height: 48px; padding: 3px 8px; font-size: 9px; }
   .nav-icon { width: 16px; height: 16px; }
-  .main-content { margin-left: 0; padding-bottom: 62px; }
   .topbar { height: 54px; padding: 0 17px; }
   .topbar-actions { gap: 10px; }.streak-pill { padding: 6px 8px; }
   .ai-status-pill { padding: 6px; font-size: 0; }.ai-status-pill i { width: 7px; height: 7px; }
