@@ -875,6 +875,9 @@ async function initializeAccount() {
   if (!accountConfigured) return;
   try {
     await syncAccountState();
+    // The boot status read is unauthenticated, so plan and month count only become real once the
+    // saved session is restored - without this the + button never sees a used-up month.
+    await updateAIStatus();
   } catch (error) {
     showToast(`Account sync could not start: ${error.message}`);
   }
