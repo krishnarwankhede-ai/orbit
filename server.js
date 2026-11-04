@@ -1984,6 +1984,18 @@ function seoJsonLd(request) {
   return JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replace(/</g, "\\u003c");
 }
 
+// The visible "Plans" paragraph on the homepage. Same source of truth as seoJsonLd, so the
+// sentence Google indexes can never advertise a price checkout does not charge.
+function planSummary() {
+  const freeSkillLimit = monthlySkillLimit("free");
+  const paidSkillLimit = monthlySkillLimit("paid");
+  const paidSkills = paidSkillLimit === null ? "unlimited new skills" : `${paidSkillLimit} new skills`;
+  const priced = Object.entries(billingPlans)
+    .map(([id, plan]) => `${plan.label} ₹${plan.amountPaise / 100} ${id === "lifetime" ? "once" : `for ${plan.periodDays} days`}`)
+    .join(", ");
+  return `Free: ${freeSkillLimit === 1 ? "one new skill a month" : `${freeSkillLimit} new skills a month`}, ${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} learning-path generations a day. Pro (${priced}) lifts that to ${paidSkills} a month with ${dailyLimit("paid", "tutor")} tutor requests and ${dailyLimit("paid", "roadmap")} roadmaps a day. Pro is the same AI model at a higher allowance, and no plan renews by itself.`;
+}
+
 function serveStatic(response, pathname, request) {
   if (LEGAL_PAGES.has(pathname)) {
     let html;
@@ -2041,6 +2053,7 @@ function serveStatic(response, pathname, request) {
         .toString("utf8")
         .replaceAll("{{siteUrl}}", origin)
         .replaceAll("{{seoJsonLd}}", seoJsonLd(request))
+        .replaceAll("{{planSummary}}", planSummary())
         .replaceAll("{{googleVerify}}", readEnv("GOOGLE_SITE_VERIFICATION").trim());
     }
     response.writeHead(200, {
