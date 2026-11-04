@@ -28,6 +28,8 @@ services:
         value: "120"
       - key: FREE_DAILY_ROADMAPS
         value: "2"
+      - key: PAID_DAILY_ROADMAPS
+        value: "20"
       - key: PAID_EMAILS
         value: ""
       - key: ORBIT_BUSINESS_NAME
