@@ -940,15 +940,42 @@ function renderOnboarding() {
   }
 }
 
+// A path request fails for three different reasons and only one of them is the AI. Telling a learner
+// who just used this month's free skill to "connect your AI tutor" sends them to a settings screen
+// that cannot help them, so each reason gets its own words and its own way out.
+function roadmapProblem() {
+  if (!roadmapError) return null;
+  if (skillGateWait === "plan") {
+    return {
+      title: "ONE SKILL A MONTH IS FREE",
+      sub: "This month's free skill is already started.",
+      hint: "Your answers are saved here. Upgrade to Pro to start another skill today, or come back after the 1st."
+    };
+  }
+  if (skillGateWait === "account") {
+    return {
+      title: "SIGN IN TO START A SKILL",
+      sub: "A skill needs a free account.",
+      hint: "Your answers are saved here. Sign in with Google and Orbit counts the month on your account instead of this browser."
+    };
+  }
+  return {
+    title: "LET’S CONNECT YOUR AI TUTOR",
+    sub: "We need to connect your AI tutor.",
+    hint: "Your answers are saved here. Orbit will build the path as soon as the AI tutor answers - it won't invent a curriculum while the AI is unavailable."
+  };
+}
+
 function renderOnboardingPreview() {
   const course = getCourse(onboardingState);
+  const problem = roadmapProblem();
   setOnboardingHeader(
-    generatedRoadmap ? "MADE FOR YOU" : roadmapError ? "LET’S CONNECT YOUR AI TUTOR" : "BUILDING YOUR LEARNING PATH",
-    generatedRoadmap ? "Your learning path is ready!" : roadmapError ? "We need to connect your AI tutor." : "Your AI tutor is building your path…",
+    generatedRoadmap ? "MADE FOR YOU" : problem ? problem.title : "BUILDING YOUR LEARNING PATH",
+    generatedRoadmap ? "Your learning path is ready!" : problem ? problem.sub : "Your AI tutor is building your path…",
     generatedRoadmap
       ? "A few thoughtful steps, shaped around your goal and the time you have."
-      : roadmapError
-        ? "Your answers are saved here. Set up your AI provider key on this computer, then try again."
+      : problem
+        ? problem.hint
         : "Orbit is creating a plan for your skill, experience, goal, and daily learning time."
   );
   const summary = document.createElement("div");
@@ -997,7 +1024,7 @@ function renderOnboardingPreview() {
     loading.className = "roadmap-loading";
     loading.textContent = roadmapError || (apiReady ? "Your AI tutor is building a learning path around your goal…" : "Connect the local server and add your AI provider key to generate an AI roadmap.");
     path.append(loading);
-    note.textContent = roadmapError ? "Your answers are saved here. Fix the AI connection and retry—Orbit won't invent a curriculum when the AI is unavailable." : "Orbit asks the AI for 40 lessons in one go, which takes around half a minute. If the first answer comes back too thin it asks once more, so give it a minute before you retry.";
+    note.textContent = roadmapProblem()?.hint || "Orbit asks the AI for 40 lessons in one go, which takes around half a minute. If the first answer comes back too thin it asks once more, so give it a minute before you retry.";
   }
   elements.onboardingContent.append(summary, path, note);
   if (!generatedRoadmap && !roadmapError) requestGeneratedRoadmap();
@@ -1034,6 +1061,9 @@ async function requestGeneratedRoadmap() {
     if (requestId !== roadmapRequestId || onboardingStep !== 5) return;
     generatedRoadmap = result;
     renderOnboarding();
+    // This path just spent one of the month's skills, so the counter and the + button have to know
+    // before the learner opens the next onboarding and gets refused by the server.
+    updateAIStatus().catch(() => {});
   } catch (error) {
     if (requestId !== roadmapRequestId || onboardingStep !== 5) return;
     roadmapError = error.message;
