@@ -86,8 +86,11 @@ The tier is decided on the server and never read from the app, so a learner cann
 | `FREE_DAILY_TUTOR_CALLS` | Tutor replies per learner per day, default 15 (one topic costs 6-11 calls, so about two small topics) |
 | `FREE_DAILY_ROADMAPS` | Roadmap generations per learner per day, default 2 |
 | `PAID_DAILY_TUTOR_CALLS` / `PAID_DAILY_ROADMAPS` | Same guard on the paid plan, defaults 120 and 20 — about thirteen topics a day, which keeps one learner's worst month near ₹177 against ₹399 of fees, and stops a runaway client from spending without limit |
+| `FREE_MONTHLY_SKILLS` | New skills a free learner may start per calendar month, default 1. Set `PAID_MONTHLY_SKILLS` to cap Pro too; leaving it unset means unlimited |
 
-Identification is `user:<supabase id>` when signed in, then `device:<device id>` from the app, then the request IP. A signed-in account is paid when it owns an active row in `learner_plan` (set by a real payment) or when its email is listed in `PAID_EMAILS`; everyone else is free. Going over a cap returns `AI_BUDGET_EXCEEDED` with an upgrade message, and the app opens the plans window. `/api/status` reports the resolved tier, plan, model and daily limits.
+Identification is `user:<supabase id>` when signed in, then `device:<device id>` from the app, then the request IP. A signed-in account is paid when it owns an active row in `learner_plan` (set by a real payment) or when its email is listed in `PAID_EMAILS`; everyone else is free. Going over a cap returns `AI_BUDGET_EXCEEDED` with an upgrade message, and the app opens the plans window. `/api/status` reports the resolved tier, plan, model, daily limits, the monthly skill cap and how many skills the signed-in account has started this month.
+
+The monthly skill allowance is a second gate on `POST /api/roadmap`, counted in the `learner_skill` table rather than in server memory — a restart or a cleared browser must not mint a fresh month. Starting a skill therefore needs a signed-in account (`ACCOUNT_REQUIRED` for a signed-out browser), rebuilding a skill already started that month costs nothing, and a second new name returns `SKILL_LIMIT_REACHED`. If Supabase is unreachable the gate opens and logs, because an outage should not stop someone from studying.
 
 A learner only spends budget on a reply they actually received: a request that fails at the provider, or returns a malformed lesson, is not charged.
 
@@ -196,8 +199,8 @@ Cloud data is stored in Supabase. For mobile or multi-device use, deploy the bac
 - The lesson UI uses an original animated Orbit mascot and a step-by-step lesson rail, with answer feedback and XP celebrations. The visual treatment is inspired by friendly learning apps without reusing Duolingo characters or assets.
 - The AI tutor responds to learner messages and adapts explanations and challenges to the learner's level, lesson stage, and attempts. It uses scaffolding after mistakes, varies examples, and reserves a fresh application challenge for mastery checks.
 - Lessons include animated tutor-thinking feedback, checkpoint reactions, and XP celebrations. Motion respects the device's reduced-motion preference.
-- Without an account, lesson progress stays in this browser on this device. With Supabase configured, account holders can sync their profile and progress to the cloud.
-- Free and paid learners run on different models and daily budgets. The paid plan comes from a real Razorpay payment recorded in `learner_plan`, or from `PAID_EMAILS` while you test. There is no automatic renewal; a plan is one payment for a fixed period.
+- Without an account, lesson progress stays in this browser on this device. With Supabase configured, account holders can sync their profile and progress to the cloud, and starting a new skill needs that signed-in account because the monthly allowance is counted on it.
+- Free and paid plans teach with the same model and differ in volume: a free learner starts one new skill a month and gets the smaller daily budget, while a paid learner starts unlimited skills with the larger one. The paid plan comes from a real Razorpay payment recorded in `learner_plan`, or from `PAID_EMAILS` while you test. There is no automatic renewal; a plan is one payment for a fixed period.
 - `/pricing`, `/privacy`, `/terms`, `/refund-policy` and `/contact` are public pages built for a payment-provider's business review, and their prices and limits are generated from the same server values the checkout enforces.
 - Hosting is still yours to do: the app runs locally until you deploy it, and live Razorpay keys need the approval described in **Go live** above.
 - AI output and mastery estimates need human review before treating them as authoritative. The app does not execute submitted code.

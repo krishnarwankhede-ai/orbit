@@ -35,9 +35,10 @@
           <tr><td>Your email address and a hashed password</td><td>To sign you in and tie your progress and paid plan to you</td><td>Supabase (authentication)</td></tr>
           <tr><td>Learning profile: name you choose, skill, level, goal, minutes per day</td><td>To teach at the right level instead of starting from zero every time</td><td>Supabase table <code>learner_state</code></td></tr>
           <tr><td>Progress: XP, streak, completed concepts, mastery scores</td><td>To show your path and pick the next lesson</td><td>Supabase table <code>learner_state</code></td></tr>
+          <tr><td>Which skills you started, and in which month</td><td>To apply the free plan's monthly skill allowance. Paid plans are not limited</td><td>Supabase table <code>learner_skill</code>. It has no access policy for your own account key — only Orbit's server writes it, so a learner cannot rewrite their own count</td></tr>
           <tr><td>Lesson conversations you have with the tutor</td><td>They are the lesson itself; the tutor needs them to continue</td><td>Sent to an AI provider to generate the reply; kept only for the request</td></tr>
           <tr><td>Plan, order id, payment id, expiry date</td><td>To know whether your paid plan is active</td><td>Supabase table <code>learner_plan</code></td></tr>
-          <tr><td>A random device id in your browser</td><td>To apply the free plan's daily limit when you are not signed in</td><td>Your own browser storage</td></tr>
+          <tr><td>A random device id in your browser</td><td>To apply the free plan's daily lesson limit when you are not signed in</td><td>Your own browser storage</td></tr>
         </tbody>
       </table>
       <p>We never see or store your card number, UPI PIN, CVV or net-banking password. Payment is handled entirely inside Razorpay's own window; we only receive back a payment id and whether the money was captured.</p>
@@ -60,10 +61,10 @@
 
       <h2>5. Retention and your choices</h2>
       <ul>
-        <li><strong>Download your data:</strong> ask us by email and we will send your learning profile, progress and plan records.</li>
+        <li><strong>Download your data:</strong> ask us by email and we will send your learning profile, progress, the skills you started and your plan records.</li>
         <li><strong>Correct it:</strong> edit your profile in the app, or tell us what is wrong.</li>
-        <li><strong>Delete it:</strong> email {{support_email}} from your registered address and we will remove your account, your learning state and your plan row. Deleting a paid account does not create a refund outside the window in our <a href="/refund-policy">refund policy</a>.</li>
-        <li><strong>Stop syncing:</strong> sign out and Orbit keeps working with progress stored only on that device.</li>
+        <li><strong>Delete it:</strong> email {{support_email}} from your registered address and we will remove your account, your learning state, your skill history and your plan row. Deleting a paid account does not create a refund outside the window in our <a href="/refund-policy">refund policy</a>.</li>
+        <li><strong>Stop syncing:</strong> sign out and Orbit keeps working with progress stored only on that device. You can keep studying the skills you already started; starting a new one needs a signed-in account, because that is where the monthly allowance is counted.</li>
       </ul>
       <p>Payment records that Indian law requires us to keep for accounting are retained for the statutory period even after account deletion; those records are not used for anything else.</p>
 

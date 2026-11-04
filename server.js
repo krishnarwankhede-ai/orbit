@@ -136,15 +136,17 @@ function readCookies(request) {
   }).filter(([name]) => name));
 }
 
-async function supabaseRequest(pathname, { method = "GET", body, accessToken } = {}) {
+async function supabaseRequest(pathname, { method = "GET", body, accessToken, serviceKey } = {}) {
   const { url, anonKey } = getSupabaseConfig();
   let response;
   try {
     response = await fetch(`${url}${pathname}`, {
       method,
       headers: {
-        "apikey": anonKey,
-        ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {}),
+        "apikey": serviceKey || anonKey,
+        ...(serviceKey
+          ? { "Authorization": `Bearer ${serviceKey}` }
+          : accessToken ? { "Authorization": `Bearer ${accessToken}` } : {}),
         ...(body ? { "Content-Type": "application/json" } : {}),
         ...(method === "POST" && pathname.startsWith("/rest/v1/") ? { "Prefer": "resolution=merge-duplicates,return=minimal" } : {})
       },
@@ -223,7 +225,7 @@ const billingPlans = {
     amountPaise: 39900,
     currency: "INR",
     periodDays: 30,
-    blurb: "The same tutor as the free plan, with far more requests each day."
+    blurb: "Unlimited skills, and the same tutor with far more requests each day."
   },
   yearly: {
     label: "Pro yearly",
@@ -543,6 +545,7 @@ async function identifyLearner(request, body) {
         return {
           tier: plan ? "paid" : "free",
           plan,
+          userId: session.user.id,
           usageKey: `user:${session.user.id}`,
           planSource: "account"
         };
@@ -600,6 +603,92 @@ function chargeAiUsage(tier, usageKey, route) {
   usage.calls += 1;
   usageCounts.set(bucket, usage);
   return usage.calls;
+}
+
+// Free learners study one skill a month, Pro learners as many as they like. The count lives in
+// Supabase rather than in usageCounts because this instance sleeps and restarts constantly, and a
+// counter that resets on every restart is not a limit - it is a fresh month every few hours.
+function monthlySkillLimit(tier) {
+  const configured = readEnv(tier === "paid" ? "PAID_MONTHLY_SKILLS" : "FREE_MONTHLY_SKILLS");
+  const parsed = Number(configured);
+  if (configured && Number.isFinite(parsed)) return Math.max(0, Math.round(parsed));
+  return tier === "paid" ? null : 1;
+}
+
+// One place says how many skills a plan gets, so changing the limit cannot leave stale copy behind
+// on the pricing page, in the terms, or in the upgrade dialog.
+function skillLimitPhrase(tier) {
+  const limit = monthlySkillLimit(tier);
+  if (limit === null) return "unlimited new skills a month";
+  return `${limit} new skill${limit === 1 ? "" : "s"} a month`;
+}
+
+// The month flips at midnight in the learner's own market, not UTC, otherwise the last evening of
+// the month is 5.5 hours of "next month" and the cap can be farmed twice in one calendar month.
+function skillMonth(now = new Date()) {
+  return now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit" }).slice(0, 7);
+}
+
+function skillKeyOf(skill) {
+  return skill.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 60);
+}
+
+function skillWriteKey() {
+  return readEnv("SUPABASE_SERVICE_ROLE_KEY").trim();
+}
+
+async function listSkillsThisMonth(userId) {
+  const serviceKey = skillWriteKey();
+  if (!serviceKey) throw Object.assign(new Error("SUPABASE_SERVICE_ROLE_KEY is not set."), { code: "SKILL_STORE_NOT_CONFIGURED" });
+  const query = `/rest/v1/learner_skill?select=skill_key&user_id=eq.${encodeURIComponent(userId)}&month=eq.${skillMonth()}`;
+  const { response, payload } = await supabaseRequest(query, { serviceKey });
+  throwSupabaseError(response, payload, "Could not read your skills for this month.", "SKILL_STORE_READ_FAILED");
+  return new Set((Array.isArray(payload) ? payload : []).map((row) => row.skill_key));
+}
+
+async function saveSkillStart(userId, skillKey) {
+  const serviceKey = skillWriteKey();
+  if (!userId || !skillKey || !serviceKey) return;
+  const { response, payload } = await supabaseRequest(
+    `/rest/v1/learner_skill?on_conflict=user_id,month,skill_key`,
+    { method: "POST", serviceKey, body: { user_id: userId, month: skillMonth(), skill_key: skillKey } }
+  );
+  throwSupabaseError(response, payload, "Could not save your new skill.", "SKILL_STORE_WRITE_FAILED");
+}
+
+// Returns the skills the learner may still start, or null when the cap could not be checked.
+// Supabase being down must not stop someone from studying, so an outage opens the gate and logs.
+async function skillGate(learner, skillKey) {
+  const limit = monthlySkillLimit(learner.tier);
+  if (limit === null) return { allowed: true, limit, used: null };
+  if (!accountIsConfigured() || !learner.userId) return { allowed: true, limit, used: null };
+  let started;
+  try {
+    started = await listSkillsThisMonth(learner.userId);
+  } catch (error) {
+    console.warn(`[orbit] skill cap not checked: ${error.message}`);
+    return { allowed: true, limit, used: null };
+  }
+  if (started.has(skillKey) || started.size < limit) return { allowed: true, limit, used: started.size };
+  return {
+    allowed: false,
+    limit,
+    used: limit,
+    error: Object.assign(
+      new Error(`The free plan teaches ${limit} new skill a month. Pro unlocks unlimited skills - the ${limit} you started stay yours to keep studying.`),
+      { status: 429, code: "SKILL_LIMIT_REACHED" }
+    )
+  };
+}
+
+// The monthly skill count is a property of an account, not of a browser, so a learner who has not
+// signed in cannot open a new skill - clearing local storage would otherwise hand out free skills.
+function requireAccountForSkill(learner) {
+  if (!accountIsConfigured() || learner.userId) return;
+  throw Object.assign(
+    new Error("Sign in free to start this skill. Your learning path and your one free skill a month are tied to your account, not to this browser."),
+    { status: 401, code: "ACCOUNT_REQUIRED" }
+  );
 }
 
 async function postToProvider(entry, url, headers, body) {
@@ -1101,8 +1190,16 @@ function aiStatus(tier) {
 async function handleApi(request, response, pathname) {
   if (request.method === "GET" && pathname === "/api/status") {
     const learner = await resolveLearner(request, null);
+    const status = aiStatus(learner.tier);
+    let skillsUsed = null;
+    if (learner.userId && accountIsConfigured()) {
+      // The settings pill answers even when Supabase is unreachable; the skill count simply hides.
+      try { skillsUsed = (await listSkillsThisMonth(learner.userId)).size; } catch { skillsUsed = null; }
+    }
     jsonResponse(response, 200, {
-      ...aiStatus(learner.tier),
+      ...status,
+      limits: { ...status.limits, monthlySkills: monthlySkillLimit(learner.tier) },
+      skillsUsed,
       plan: learner.plan,
       planSource: learner.planSource,
       billingConfigured: billingIsConfigured(),
@@ -1417,6 +1514,10 @@ async function handleApi(request, response, pathname) {
 
   if (pathname === "/api/roadmap") {
     const skill = requireText(body.skill, "Skill", 100);
+    requireAccountForSkill(learner);
+    const skillKey = skillKeyOf(skill);
+    const gate = await skillGate(learner, skillKey);
+    if (!gate.allowed) throw gate.error;
     const goal = requireText(body.goal, "Learning goal", 200);
     const customGoal = typeof body.customGoal === "string" ? body.customGoal.slice(0, 200) : "";
     const learnerLevel = requireText(body.learnerLevel, "Starting level", 50);
@@ -1445,6 +1546,13 @@ async function handleApi(request, response, pathname) {
     const data = await askModel(prompt, [{ role: "user", text: "Build my comprehensive, personalized learning curriculum from foundations through advanced practice." }], roadmapSchema, 10000, { tier: learner.tier });
     const roadmap = validateRoadmap(data);
     chargeAiUsage(learner.tier, learner.usageKey, route);
+    // The path is in the learner's hands now, so a failed bookkeeping write must not take it back;
+    // losing one row costs Orbit at most one free skill, rejecting the response costs the learner.
+    try {
+      await saveSkillStart(learner.userId, skillKey);
+    } catch (error) {
+      console.warn(`[orbit] skill start not recorded: ${error.message}`);
+    }
     jsonResponse(response, 200, roadmap);
     return;
   }
@@ -1612,7 +1720,7 @@ function legalPlanRows() {
     "Free",
     "₹0",
     "No expiry",
-    `Try Orbit before paying. The same AI tutor, ${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} learning paths a day.`
+    `Try Orbit before paying. The same AI tutor, ${skillLimitPhrase("free")}, ${dailyLimit("free", "tutor")} tutor requests a day and ${dailyLimit("free", "roadmap")} learning-path generations a day for the skills you have started.`
   ];
   const rows = [free];
   for (const plan of Object.values(billingPlans)) {
@@ -1641,6 +1749,8 @@ function renderLegalPage(fileName, info) {
     plan_rows: legalPlanRows(),
     free_tutor_calls: String(dailyLimit("free", "tutor")),
     free_roadmaps: String(dailyLimit("free", "roadmap")),
+    free_skills: monthlySkillLimit("free") === null ? "Unlimited" : String(monthlySkillLimit("free")),
+    paid_skills: monthlySkillLimit("paid") === null ? "Unlimited" : String(monthlySkillLimit("paid")),
     paid_tutor_calls: String(dailyLimit("paid", "tutor")),
     paid_roadmaps: String(dailyLimit("paid", "roadmap")),
     config_warning: warning
@@ -1766,6 +1876,13 @@ module.exports = {
   aiStatus,
   askModel,
   providerChain,
+  monthlySkillLimit,
+  skillLimitPhrase,
+  skillMonth,
+  skillKeyOf,
+  skillGate,
+  saveSkillStart,
+  requireAccountForSkill,
   roadmapSchema,
   tutorSchema,
   briefSchema,

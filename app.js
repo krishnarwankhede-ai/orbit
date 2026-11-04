@@ -119,6 +119,8 @@ let apiReady = false;
 let accountConfigured = false;
 let learnerTier = "";
 let learnerPlanId = "";
+let skillsLeft = null;
+let skillGateWait = "";
 let accountUser = null;
 let cloudSyncReady = false;
 let cloudSaveTimer;
@@ -373,6 +375,7 @@ async function updateAIStatus() {
     accountConfigured = false;
     learnerTier = "";
     learnerPlanId = "";
+    skillsLeft = null;
     const pill = document.querySelector("#ai-status-pill");
     pill.classList.add("is-disconnected");
     document.querySelector("#ai-status-text").textContent = "Connect server";
@@ -394,12 +397,21 @@ async function updateAIStatus() {
     else pill.title = `${status.tier === "paid" ? "Paid" : "Free"} plan · ${status.model} · ${(status.providers || []).map((entry) => `${entry.provider} ${entry.model}`).join(", ")}.`;
     learnerTier = status.tier === "paid" ? "Paid plan" : "Free plan";
     learnerPlanId = ["monthly", "yearly", "lifetime"].includes(status.plan) ? status.plan : "";
+    const cap = status.limits?.monthlySkills;
+    skillsLeft = typeof cap === "number" && typeof status.skillsUsed === "number"
+      ? Math.max(0, cap - status.skillsUsed)
+      : null;
+    // Someone parked at the skill gate should not have to hunt for the button again: once the
+    // account exists or the plan activates, the path request they already filled in can re-run.
+    if (skillGateWait === "account" && accountUser) resumeSkillStart();
+    else if (skillGateWait === "plan" && learnerPlanId) resumeSkillStart();
     renderAccountPanel();
   } catch {
     apiReady = false;
     accountConfigured = false;
     learnerTier = "";
     learnerPlanId = "";
+    skillsLeft = null;
     const pill = document.querySelector("#ai-status-pill");
     pill.classList.add("is-disconnected");
     document.querySelector("#ai-status-text").textContent = "Server not running";
@@ -544,6 +556,14 @@ function openPlansDialog(note) {
   renderPlans(note);
 }
 
+// Pro has no monthly skill count, so the server sends null and the note disappears by itself.
+function skillNote() {
+  if (skillsLeft === null) return "";
+  return skillsLeft > 0
+    ? ` · ${skillsLeft} new skill${skillsLeft === 1 ? "" : "s"} left this month`
+    : " · this month's free skill is started - Pro adds unlimited skills";
+}
+
 function renderAccountPanel() {
   const signedIn = Boolean(accountUser);
   document.querySelector("#account-signed-in").hidden = !signedIn;
@@ -558,7 +578,9 @@ function renderAccountPanel() {
   const syncLabel = signedIn ? "Cloud sync on" : "Local learning";
   document.querySelector(".profile-copy small").textContent = learnerTier ? `${learnerTier} · ${syncLabel}` : syncLabel;
   const planState = document.querySelector("#account-plan-state");
-  if (planState) planState.textContent = learnerPlanId ? `Active plan: ${planNote(learnerPlanId)}` : "Active plan: Free";
+  if (planState) {
+    planState.textContent = `${learnerPlanId ? `Active plan: ${planNote(learnerPlanId)}` : "Active plan: Free"}${skillNote()}`;
+  }
   const upgradeButton = document.querySelector("#account-upgrade");
   if (upgradeButton) upgradeButton.hidden = Boolean(learnerPlanId);
   document.querySelector("#storage-note").textContent = signedIn
@@ -1011,19 +1033,39 @@ async function requestGeneratedRoadmap() {
   } catch (error) {
     if (requestId !== roadmapRequestId || onboardingStep !== 5) return;
     roadmapError = error.message;
+    // A skill needs an account and a used-up month needs a plan - neither is an AI connection
+    // problem, so the button under the message names the thing that actually unblocks it.
+    skillGateWait = error.code === "ACCOUNT_REQUIRED" ? "account"
+      : error.code === "SKILL_LIMIT_REACHED" ? "plan" : "";
     renderOnboarding();
     const retry = document.createElement("button");
     retry.type = "button";
     retry.className = "onboarding-edit roadmap-retry";
     retry.id = "roadmap-retry";
-    retry.textContent = "Try the AI connection again";
+    retry.textContent = skillGateWait === "account"
+      ? "Sign in, then start this skill"
+      : skillGateWait === "plan"
+        ? "See Pro plans, then start another skill"
+        : "Try the AI connection again";
     elements.onboardingActions.append(retry);
+    if (skillGateWait === "account") openAccountDialog();
+    else if (skillGateWait === "plan") openPlansDialog(error.message);
   }
+}
+
+// Step 5 asks for the path on its own as soon as the error is cleared, so finishing the sign-in or
+// the payment is the only thing the learner has to do.
+function resumeSkillStart() {
+  skillGateWait = "";
+  if (onboardingStep !== 5 || generatedRoadmap || !roadmapError) return;
+  roadmapError = "";
+  renderOnboarding();
 }
 
 function openOnboarding() {
   onboardingStep = profile && !hasComprehensiveCurriculum(profile) ? 5 : 0;
   roadmapError = "";
+  skillGateWait = "";
   generatedRoadmap = null;
   roadmapRequestId += 1;
   const savedLevel = { Beginner: "new", Intermediate: "some", Advanced: "comfortable" }[profile?.level] || "";
@@ -2159,6 +2201,17 @@ elements.answer.addEventListener("keydown", (event) => {
 });
 
 document.querySelector(".tiny-add").addEventListener("click", () => {
+  // Starting a skill is what spends the free monthly allowance, so the two ways it can be refused
+  // are handled before the learner spends five onboarding steps on a path they cannot get.
+  if (accountConfigured && !accountUser) {
+    showToast("Sign in free to start a new skill - it is counted on your account, not this browser.");
+    openAccountDialog();
+    return;
+  }
+  if (skillsLeft === 0) {
+    openPlansDialog("You have used this month's free skill. Pro unlocks unlimited skills, and you keep studying the one you started.");
+    return;
+  }
   openOnboarding();
 });
 document.querySelector(".notification-button").addEventListener("click", () => {

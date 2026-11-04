@@ -60,3 +60,20 @@ create policy "Learners can update their own plan"
   with check ((select auth.uid()) = user_id);
 
 grant select, insert, update on public.learner_plan to authenticated;
+
+-- Which skills each learner started in which calendar month. The free plan teaches one a month,
+-- Pro is unlimited. Deliberately has no policies: RLS with none means a learner's own key can
+-- neither read nor rewrite this table, only Orbit's server (service role) records a skill start.
+create table if not exists public.learner_skill (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  month text not null,
+  skill_key text not null,
+  created_at timestamptz not null default now(),
+  constraint learner_skill_one_row_per_skill_month unique (user_id, month, skill_key)
+);
+
+create index if not exists learner_skill_by_month
+  on public.learner_skill (user_id, month);
+
+alter table public.learner_skill enable row level security;
