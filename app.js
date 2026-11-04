@@ -250,8 +250,6 @@ function renderSkills() {
   if (!container) return;
   const activeId = skillIdentity(profile);
   container.replaceChildren();
-  // On a phone the list becomes a strip above the tab bar, and one skill is not worth a strip.
-  container.classList.toggle("is-solo", skillLibrary.skills.length < 2);
   skillLibrary.skills.forEach((plan) => {
     const id = skillIdentity(plan);
     const course = getCourse(plan);
