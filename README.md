@@ -40,6 +40,7 @@ Everything is server-decided and real: the tier, the daily AI budget, the monthl
 | `server.js` | HTTP server, AI provider chain and fallbacks, tiers, skill gate, Supabase state + auth, Razorpay verify/webhook, legal pages |
 | `app.js` / `index.html` / `styles.css` | the entire client — onboarding, roadmap rendering, lesson rail, tutor chat, skill library, cloud sync |
 | `legal/*.html` | `/pricing` `/privacy` `/terms` `/refund-policy` `/contact`, filled from the same server values the checkout enforces |
+| `guides/*.html` | the five free `/learn/*` guide pages Google can rank, filled from the same values and linked from the homepage and the sitemap |
 | `supabase.sql` | `learner_state`, `learner_plan` and `learner_skill` with row-level security on |
 | `scripts/check-*.js` | the four offline suites |
 | `render.yaml` | one-click deploy of the app + backend as a single service |

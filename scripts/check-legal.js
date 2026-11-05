@@ -18,9 +18,10 @@ process.env.ORBIT_BUSINESS_ADDRESS = "22 Sample Road, Pune 411001, India";
 process.env.ORBIT_SITE_URL = "https://orbit-review.test";
 process.env.ORBIT_LEGAL_DATE = "2 November 2026";
 
-const { server, billingPlans, TRIAL_DAYS } = require("../server.js");
+const { server, billingPlans, TRIAL_DAYS, GUIDE_PAGES } = require("../server.js");
 
 const PAGES = ["/pricing", "/privacy", "/terms", "/refund-policy", "/contact"];
+const GUIDES = [...GUIDE_PAGES.keys()];
 
 async function getPage(pathname) {
   const response = await fetch(`http://127.0.0.1:${PORT}${pathname}`);
@@ -91,6 +92,41 @@ async function main() {
     assert.ok(!soldPlans.includes("ifetime"), "no page still sells the retired lifetime plan");
     assert.ok(!soldPlans.includes("₹1,999"), "the retired ₹1,999 price is gone from every page");
 
+    // The free guides are the pages Google can rank, so they are held to the same rules as the
+    // policy pages: they serve, they carry the real limits, and they never leak a placeholder.
+    const sitemapBody = await (await fetch(`http://127.0.0.1:${PORT}/sitemap.xml`)).text();
+    const seenTitles = new Set();
+    for (const route of GUIDES) {
+      const guide = await getPage(route);
+      assert.equal(guide.status, 200, `${route} serves without an account`);
+      assert.ok(guide.type.startsWith("text/html"), `${route} is a page, not JSON`);
+      assert.ok(!guide.body.includes("{{"), `${route} has no unfilled placeholder`);
+      assert.ok(!guide.body.includes("Not ready to publish"), `${route} never shows the publish warning`);
+      assert.ok(guide.body.includes("Orbit Learning Studio"), `${route} shows the business name`);
+      assert.ok(guide.body.includes("help@orbit-learning.test"), `${route} shows a working contact`);
+      assert.ok(guide.body.includes(`href="${route}"`), `${route} carries its own canonical link`);
+      assert.ok(guide.body.includes(`href="/pricing"`), `${route} links to the pricing page`);
+      assert.ok(guide.body.includes(String(TRIAL_DAYS)), `${route} quotes the real trial length`);
+      assert.ok(guide.body.includes("<h1>"), `${route} has a headline`);
+      assert.ok(guide.body.replace(/<[^>]*>/g, "").length > 3000, `${route} is a real answer, not a teaser`);
+      assert.ok(!guide.body.includes("ifetime"), `${route} does not sell the retired lifetime plan`);
+      const title = (guide.body.match(/<title>([^<]*)<\/title>/) || [])[1] || "";
+      assert.ok(title.startsWith("Orbit") === false, `${route} does not reuse the site title`);
+      assert.ok(title.includes("— Orbit"), `${route} titles end with the brand`);
+      assert.equal(seenTitles.has(title), false, `${route} has a title no other guide uses`);
+      seenTitles.add(title);
+      assert.ok(sitemapBody.includes(`https://orbit-review.test${route}`), `${route} is in the sitemap`);
+      assert.ok(home.body.includes(`href="${route}"`), `${route} is linked from the homepage`);
+      for (const other of GUIDES) {
+        if (other !== route) assert.ok(guide.body.includes(`href="${other}"`), `${route} links to ${other}`);
+      }
+    }
+    assert.ok(home.body.includes("Free guides"), "the homepage names the guides section");
+    const hindiGuide = await getPage("/learn/coding-in-hindi");
+    assert.ok(/[\u0900-\u097F]/.test(hindiGuide.body), "the Hindi guide carries real Devanagari, not only romanised text");
+    const missingGuide = await getPage("/learn/no-such-guide");
+    assert.equal(missingGuide.status, 404, "an unknown guide route is still a 404");
+
     const styles = await fetch(`http://127.0.0.1:${PORT}/styles.css`);
     assert.equal(styles.status, 200, "the shared stylesheet is still served");
     const css = await styles.text();
@@ -109,7 +145,7 @@ async function main() {
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
-  console.log("Legal checks passed: five public pages, real prices, cross-links, contact details and the publish guard.");
+  console.log("Legal checks passed: five public pages, five free guides, real prices, cross-links, contact details and the publish guard.");
 }
 
 main().catch((error) => {

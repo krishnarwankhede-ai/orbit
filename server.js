@@ -1841,6 +1841,18 @@ const LEGAL_PAGES = new Map([
   ["/contact", "contact.html"]
 ]);
 
+// Static guides that answer the questions learners actually type into a search box. They are the
+// pages Google can rank - the app itself has nothing crawlable to rank for - so each one answers
+// first and mentions Orbit second. Limits and trial days come from the same helpers the server
+// enforces, never from text typed into the template.
+const GUIDE_PAGES = new Map([
+  ["/learn/python-roadmap", { file: "python-roadmap.html", nav: "Python roadmap" }],
+  ["/learn/python-for-beginners", { file: "python-for-beginners.html", nav: "Start with Python?" }],
+  ["/learn/how-long-to-learn-coding", { file: "how-long-to-learn-coding.html", nav: "How long it takes" }],
+  ["/learn/print-function", { file: "print-function.html", nav: "print() guide" }],
+  ["/learn/coding-in-hindi", { file: "coding-in-hindi.html", nav: "Hindi mein coding" }]
+]);
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -1895,12 +1907,11 @@ function legalPlanRows() {
   return rows.map((cells) => `      <tr>${cells.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("\n");
 }
 
-function renderLegalPage(fileName, info) {
-  const template = fs.readFileSync(path.join(ROOT, "legal", fileName), "utf8");
+function siteReplacements(info) {
   const warning = info.missing.length
     ? `<div class="legal-warning"><strong>Not ready to publish.</strong> Set ${info.missing.map((key) => `<code>${key}</code>`).join(", ")} in your server environment so this page shows real business details. Razorpay will not approve a site without a working contact address.</div>`
     : "";
-  const replacements = {
+  return {
     business_name: escapeHtml(info.businessName || "Your company name"),
     support_email: info.supportEmail ? `<a href="mailto:${escapeHtml(info.supportEmail)}">${escapeHtml(info.supportEmail)}</a>` : "<em>not set</em>",
     grievance_email: info.grievanceEmail ? `<a href="mailto:${escapeHtml(info.grievanceEmail)}">${escapeHtml(info.grievanceEmail)}</a>` : "<em>not set</em>",
@@ -1920,7 +1931,44 @@ function renderLegalPage(fileName, info) {
     paid_roadmaps: String(dailyLimit("paid", "roadmap")),
     config_warning: warning
   };
+}
+
+// Any {{lower_case_name}} left in a template that has no value renders as nothing rather than
+// leaking the placeholder into a page a customer can see.
+function fillTemplate(template, replacements) {
   return template.replace(/\{\{([a-z_]+)\}\}/g, (match, key) => (key in replacements ? replacements[key] : ""));
+}
+
+function renderLegalPage(fileName, info) {
+  return fillTemplate(fs.readFileSync(path.join(ROOT, "legal", fileName), "utf8"), siteReplacements(info));
+}
+
+function guideNav(activeRoute) {
+  return [...GUIDE_PAGES.entries()]
+    .map(([route, guide]) => (route === activeRoute
+      ? `        <a href="${route}" aria-current="page">${guide.nav}</a>`
+      : `        <a href="${route}">${guide.nav}</a>`))
+    .join("\n");
+}
+
+function guideLinks(activeRoute) {
+  return [...GUIDE_PAGES.entries()]
+    .filter(([route]) => route !== activeRoute)
+    .map(([route, guide]) => `<a href="${route}">${guide.nav}</a>`)
+    .join(" &middot; ");
+}
+
+// The list Google follows from the homepage to reach the guides. Without these links the guides
+// would only be discoverable through the sitemap.
+function guideList() {
+  return [...GUIDE_PAGES.entries()]
+    .map(([route, guide]) => `            <li><a class="about-link" href="${route}">${guide.nav}</a></li>`)
+    .join("\n");
+}
+
+function renderGuidePage(route, guide, info) {
+  const template = fs.readFileSync(path.join(ROOT, "guides", guide.file), "utf8");
+  return fillTemplate(template, { ...siteReplacements(info), guide_nav: guideNav(route), guide_links: guideLinks(route) });
 }
 
 // The tab icon is the same purple mark the sidebar draws, as SVG so no raster sizes are needed.
@@ -1935,7 +1983,7 @@ const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
 
 function sitemapXml(origin) {
   const today = new Date().toISOString().slice(0, 10);
-  const urls = ["/", ...LEGAL_PAGES.keys()];
+  const urls = ["/", ...GUIDE_PAGES.keys(), ...LEGAL_PAGES.keys()];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((route) => `  <url><loc>${origin}${route}</loc><lastmod>${today}</lastmod></url>`).join("\n")}
@@ -2064,12 +2112,15 @@ function planSummary() {
 }
 
 function serveStatic(response, pathname, request) {
-  if (LEGAL_PAGES.has(pathname)) {
+  const legalPage = LEGAL_PAGES.get(pathname);
+  const guidePage = GUIDE_PAGES.get(pathname);
+  if (legalPage || guidePage) {
     let html;
     try {
-      html = renderLegalPage(LEGAL_PAGES.get(pathname), siteInfo(request));
+      const info = siteInfo(request);
+      html = legalPage ? renderLegalPage(legalPage, info) : renderGuidePage(pathname, guidePage, info);
     } catch {
-      jsonResponse(response, 500, { error: "Could not read the policy pages.", code: "LEGAL_PAGE_READ_FAILED" });
+      jsonResponse(response, 500, { error: "Could not read the public pages.", code: "PUBLIC_PAGE_READ_FAILED" });
       return;
     }
     response.writeHead(200, {
@@ -2120,7 +2171,8 @@ function serveStatic(response, pathname, request) {
         .toString("utf8")
         .replaceAll("{{siteUrl}}", origin)
         .replaceAll("{{seoJsonLd}}", seoJsonLd(request))
-        .replaceAll("{{planSummary}}", planSummary());
+        .replaceAll("{{planSummary}}", planSummary())
+        .replaceAll("{{guideList}}", guideList());
     }
     response.writeHead(200, {
       "Cache-Control": "no-cache",
@@ -2205,6 +2257,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  GUIDE_PAGES,
+  LEGAL_PAGES,
   aiStatus,
   askModel,
   providerChain,

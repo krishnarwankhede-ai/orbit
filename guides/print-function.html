@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="The Python print() function explained properly: arguments, sep and end, file output, escaping, f-strings, and the eight errors beginners keep hitting.">
+    <title>Python print() Function: sep, end, file and 8 Mistakes — Orbit</title>
+    <link rel="canonical" href="{{site_url}}/learn/print-function">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Orbit">
+    <meta property="og:url" content="{{site_url}}/learn/print-function">
+    <meta property="og:title" content="Python print() Function: sep, end, file and 8 Mistakes">
+    <meta property="og:description" content="Everything print() can do, with worked examples and the errors beginners keep hitting.">
+    <meta property="og:image" content="{{site_url}}/orbit-share.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="legal-body">
+    <header class="legal-topbar">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>orbit<span class="brand-period">.</span></span></a>
+      <nav class="legal-nav" aria-label="Free guides">
+{{guide_nav}}
+      </nav>
+    </header>
+
+    <main class="legal-page">
+      <p class="eyebrow"><span class="eyebrow-dot"></span> FREE GUIDE</p>
+      <h1>Python print(): everything it does, and the eight mistakes that break it</h1>
+      <p class="legal-updated">Works on Python 3.7 and newer. Every example can be pasted straight into a file and run.</p>
+
+      <p><code>print()</code> is the first function every Python learner meets, and the one most people never finish learning. It takes any number of values, turns each into text with <code>str()</code>, joins them with a separator, adds an ending, and sends the whole thing to a stream. Four knobs, and almost all beginner confusion comes from not knowing which knob they are turning.</p>
+
+      <h2>The signature</h2>
+      <pre><code>print(*values, sep=" ", end="\n", file=None, flush=False)</code></pre>
+      <table class="legal-table">
+        <thead><tr><th>Parameter</th><th>Default</th><th>What it changes</th></tr></thead>
+        <tbody>
+          <tr><td><code>*values</code></td><td>&mdash;</td><td>Any number of items. Each one is converted with <code>str()</code>, so you can pass numbers, lists, objects.</td></tr>
+          <tr><td><code>sep</code></td><td><code>" "</code></td><td>The string put between the values.</td></tr>
+          <tr><td><code>end</code></td><td><code>"\n"</code></td><td>What comes after the last value. This is why print moves to a new line.</td></tr>
+          <tr><td><code>file</code></td><td><code>sys.stdout</code></td><td>Where the text goes &mdash; pass an open file, or <code>sys.stderr</code>.</td></tr>
+          <tr><td><code>flush</code></td><td><code>False</code></td><td>Write it now instead of waiting for the buffer. Matters when you print progress.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>sep: joining several values</h2>
+      <pre><code>print("a", "b", "c")                 # a b c
+print("a", "b", "c", sep=" - ")      # a - b - c
+print(*[1, 2, 3], sep=", ")          # 1, 2, 3</code></pre>
+      <p>The last line is the idiomatic way to unpack a list into a readable line. <code>print([1, 2, 3])</code> prints <code>[1, 2, 3]</code> with brackets; <code>print(*[1, 2, 3], sep=", ")</code> prints <code>1, 2, 3</code>.</p>
+
+      <h2>end: staying on the same line</h2>
+      <pre><code>for i in range(1, 5):
+    print(i, end=" ")
+# 1 2 3 4</code></pre>
+      <p>Set <code>end=""</code> when you are building one line across several calls &mdash; a progress display, for example. For prompts typed by a user, prefer <code>input("Name: ")</code>, which writes its prompt without a newline on its own.</p>
+
+      <h2>file: sending output somewhere else</h2>
+      <pre><code>with open("report.txt", "w", encoding="utf-8") as out:
+    print("Total", 42, file=out)
+
+import sys
+print("something went wrong", file=sys.stderr)</code></pre>
+      <p>Always pass <code>encoding="utf-8"</code> when you open the file. Windows gives files a local encoding by default, which is why the same script writes fine on one machine and crashes on another with a <code>UnicodeEncodeError</code>.</p>
+
+      <h2>Formatting instead of gluing strings together</h2>
+      <pre><code>price, qty = 49.9, 3
+
+print("Cost: ₹" + str(price * qty))          # works, brittle
+print("Cost: ₹%.2f" % (price * qty))          # old style
+print(f"Cost: ₹{price * qty:.2f}")           # f-string - use this</code></pre>
+      <p>f-strings evaluate expressions inside <code>{}</code>, so <code>f"{price * qty:.2f}"</code> prints <code>149.70</code>: <code>.2f</code> is two decimal places, <code>&gt;8</code> pads to eight characters on the right, <code>,.0f</code> adds thousands separators. Use <code>repr()</code> or <code>f"{value!r}"</code> when you need to see spaces and quotes.</p>
+
+      <h2>Escapes you actually need</h2>
+      <pre><code>print("line one\nline two")     # newline
+print("col1\tcol2")             # tab
+print("backslash: \\\")          # a literal backslash
+print(r"C:\new\folder")         # raw string: \n stays text, not a newline</code></pre>
+
+      <h2>The eight mistakes</h2>
+      <table class="legal-table">
+        <thead><tr><th>Mistake</th><th>What happens</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>Python 2 style <code>print "x"</code></td><td><code>SyntaxError: Missing parentheses</code></td><td>Always <code>print("x")</code>. Most old tutorials are Python 2.</td></tr>
+          <tr><td>Quoting inside quoting</td><td>The string ends early</td><td>Use the other quote type, or an f-string.</td></tr>
+          <tr><td><code>print("Total: " + 42)</code></td><td><code>TypeError: can only concatenate str</code></td><td><code>print("Total:", 42)</code> or <code>f"Total: {42}"</code>.</td></tr>
+          <tr><td>Trusting <code>input()</code> to be a number</td><td><code>ValueError</code> on empty or lettered input</td><td><code>try</code> / <code>except ValueError</code> around <code>int()</code>.</td></tr>
+          <tr><td><code>print(list)</code> when you wanted the items</td><td>Brackets and commas in the output</td><td><code>print(*list, sep=", ")</code>.</td></tr>
+          <tr><td>A stray comma creating a tuple</td><td><code>x = "a", "b"</code> then <code>print(x)</code> shows <code>('a', 'b')</code></td><td>Remove the comma, or print the items: <code>print(*x)</code>.</td></tr>
+          <tr><td>Backslashes inside a normal string</td><td><code>"\n"</code> turns into a real newline mid-path</td><td>Use a raw string <code>r"..."</code> or forward slashes.</td></tr>
+          <tr><td>Progress lines that appear all at the end</td><td>Output is buffered</td><td><code>print(..., end="", flush=True)</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Two drills worth doing</h2>
+      <ol>
+        <li>Print a multiplication table for 7 with every number padded to four characters, so the columns line up: <code>for n in range(1, 11): print(f"7 x {n} = {7 * n:&gt;4}")</code>.</li>
+        <li>Write three lines to a file, then print the same three lines to the screen, with the separator as <code>" | "</code> and the ending as <code>"!"</code> on the last line only.</li>
+      </ol>
+
+      <h2>When a fixed example is not enough</h2>
+      <p>These are the patterns that cover most real printing. When your version misbehaves, the useful move is to paste your exact line into a tutor and ask what it does differently &mdash; which is what Orbit's chat is for. It explains the one concept, sets a challenge on it, marks your answer, and answers the "why" you ask in the middle of a lesson without losing your place. It does this for about 40 lessons' worth of any skill you name, not only print.</p>
+      <p class="legal-cta"><a class="button button-primary" href="/">Ask your own question &mdash; first {{trial_days}} days free</a></p>
+      <p class="legal-note">New accounts get {{trial_days}} days of the full Pro allowance with no card. After that the free plan still gives {{free_tutor_calls}} tutor requests a day, so this kind of question keeps working without payment. See <a href="/pricing">pricing</a>.</p>
+
+      <h2>More free guides</h2>
+      <p>{{guide_links}}</p>
+    </main>
+
+    <footer class="legal-footer">
+      <p>{{business_name}} &middot; {{support_email}}</p>
+      <nav class="legal-nav" aria-label="Footer pages">
+        <a href="/pricing">Pricing</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/contact">Contact</a>
+      </nav>
+    </footer>
+  </body>
+</html>

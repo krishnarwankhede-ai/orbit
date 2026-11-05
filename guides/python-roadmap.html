@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="A Python roadmap that works for a total beginner: the eight stages in order, what to practise in each, realistic hours, and the four traps that make people quit.">
+    <title>Python Roadmap for Beginners: the Order That Works — Orbit</title>
+    <link rel="canonical" href="{{site_url}}/learn/python-roadmap">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Orbit">
+    <meta property="og:url" content="{{site_url}}/learn/python-roadmap">
+    <meta property="og:title" content="Python Roadmap for Beginners: the Order That Works">
+    <meta property="og:description" content="Eight stages, what to practise in each, realistic hours, and the four traps that make beginners quit.">
+    <meta property="og:image" content="{{site_url}}/orbit-share.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="legal-body">
+    <header class="legal-topbar">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>orbit<span class="brand-period">.</span></span></a>
+      <nav class="legal-nav" aria-label="Free guides">
+{{guide_nav}}
+      </nav>
+    </header>
+
+    <main class="legal-page">
+      <p class="eyebrow"><span class="eyebrow-dot"></span> FREE GUIDE</p>
+      <h1>Python roadmap for beginners: the order that actually works</h1>
+      <p class="legal-updated">No sign-up needed to read this, and it assumes you have never written a line of code.</p>
+
+      <p>Most people who quit Python did not quit because Python is hard. They quit around week three &mdash; after six hours of tutorials and very little typing &mdash; when a small program refused to run and they had no idea which of the six half-learned things was the problem. Order fixes that. Each stage below uses only what the stage before it handed you.</p>
+
+      <h2>The eight stages</h2>
+      <p>The times assume roughly two hours a day, which is the pace most people with a job or college can keep. They are estimates, not promises: the hours you spend typing code count, the hours you spend watching it mostly do not.</p>
+      <table class="legal-table">
+        <thead><tr><th>Stage</th><th>What you learn</th><th>What you can build after it</th><th>Realistic time</th></tr></thead>
+        <tbody>
+          <tr><td>1. First program</td><td>Installing Python, running a file, <code>print()</code>, comments</td><td>A program that prints your own introduction</td><td>1&ndash;2 days</td></tr>
+          <tr><td>2. Values and names</td><td>Variables, <code>int</code>, <code>str</code>, <code>float</code>, <code>bool</code>, <code>input()</code>, f-strings</td><td>A bill splitter, an age-to-days converter</td><td>1&ndash;2 weeks</td></tr>
+          <tr><td>3. Decisions</td><td><code>if</code> / <code>elif</code> / <code>else</code>, comparisons, <code>and</code> / <code>or</code> / <code>not</code></td><td>A quiz that grades your own answers</td><td>1 week</td></tr>
+          <tr><td>4. Repetition</td><td><code>for</code>, <code>while</code>, <code>range()</code>, <code>break</code>, <code>continue</code></td><td>FizzBuzz, a number-guessing game</td><td>1&ndash;2 weeks</td></tr>
+          <tr><td>5. Collections</td><td>Lists, dicts, sets, tuples, slicing, comprehensions</td><td>A contact book, a word-frequency counter</td><td>2 weeks</td></tr>
+          <tr><td>6. Functions and modules</td><td><code>def</code>, arguments, <code>return</code>, scope, <code>import</code></td><td>Your stage-3 quiz split into reusable pieces</td><td>1&ndash;2 weeks</td></tr>
+          <tr><td>7. Files and failures</td><td>Reading and writing files, JSON, <code>try</code> / <code>except</code></td><td>A to-do list that survives closing the terminal</td><td>1&ndash;2 weeks</td></tr>
+          <tr><td>8. One real project</td><td>All of the above, plus reading documentation</td><td>Something you would actually use</td><td>2&ndash;3 weeks</td></tr>
+        </tbody>
+      </table>
+      <p class="legal-note">Classes and object-oriented programming come after stage 8, not inside this list. A beginner who learns <code>__init__</code> before they can build a small program has learnt syntax with nothing to attach it to.</p>
+
+      <h2>What to practise in each stage</h2>
+      <p>"Learning" gets confused with "watching" more than anything else on this roadmap. Every stage needs drills that use only that stage's tools:</p>
+      <ul>
+        <li><strong>Stage 2:</strong> read three numbers from the user, print one sentence that uses all three, then print the same sentence with the money value to two decimal places.</li>
+        <li><strong>Stage 3:</strong> read a mark and print a grade. Then type a letter instead of a number on purpose and read the error Python gives you.</li>
+        <li><strong>Stage 4:</strong> FizzBuzz from memory. Then the multiplication table of any number. Then a loop that stops the moment the answer is right.</li>
+        <li><strong>Stage 5:</strong> count how often each word appears in a paragraph with a dict, then do it again with <code>collections.Counter</code> and compare the two.</li>
+        <li><strong>Stage 6:</strong> turn the grade program into a function that takes a mark and returns a grade, then use that function twice in the same file.</li>
+        <li><strong>Stage 7:</strong> save a to-do list to a file, close the program, open it again, and make it load what you saved.</li>
+      </ul>
+
+      <h2>Which project to build in stage 8</h2>
+      <p>Pick it from the reason you started, not from what looks impressive:</p>
+      <ul>
+        <li><strong>A job in data:</strong> download one free CSV, load it with <code>pandas</code>, answer five written questions about it.</li>
+        <li><strong>Boring work you want gone:</strong> a script that renames a folder of files, or reads every invoice in a folder and prints the total.</li>
+        <li><strong>Websites and apps:</strong> a small Flask app with two pages and one form, then put it behind a real URL.</li>
+        <li><strong>Proving it to yourself:</strong> a command-line game with a score saved to disk &mdash; it uses every stage above.</li>
+      </ul>
+
+      <h2>The four traps</h2>
+      <h3>Collecting courses instead of finishing one</h3>
+      <p>Three half-watched courses teach less than one finished. The topic you are bored of in course two is the topic everybody needs in month three.</p>
+      <h3>Copying code that works</h3>
+      <p>Typing it yourself is not pedantry. The mistakes you make while typing are what teach the syntax, and paste-first learners hit a wall the moment an example changes.</p>
+      <h3>Practising only when you feel confident</h3>
+      <p>Confidence is the output of practice, not the input. Ten minutes daily beats a four-hour Sunday that never happens.</p>
+      <h3>Stuck for twenty minutes and saying nothing</h3>
+      <p>Being stuck is where learning stops unless the block gets cleared. Write the exact sentence you are stuck on &mdash; "why does this loop run one extra time" &mdash; and ask it. That is the whole skill of getting help.</p>
+
+      <h2>Doing this with an AI tutor</h2>
+      <p>The roadmap above is fixed: everybody gets the same eight stages in the same order. Orbit builds a path around <em>your</em> answer instead. It asks what you want to learn, what you already know and how many minutes a day you have, then writes a path of about 40 lessons for exactly that &mdash; and teaches it one concept at a time: a challenge on that idea, your wrong answers scaffolded instead of marked, and a mastery gate before the next concept unlocks.</p>
+      <p>Doubts get answered in the same chat, mid-lesson. Ask why that loop runs one extra time, get the answer, and the question you were working on is still waiting for you. Python is one of many names it takes &mdash; the same path gets written for Excel, accounting, English grammar, or an interview you have on Friday.</p>
+      <p class="legal-cta"><a class="button button-primary" href="/">Start your own path &mdash; first {{trial_days}} days free</a></p>
+      <p class="legal-note">Every new account gets the full Pro allowance for {{trial_days}} days with no card asked for. After that the free plan keeps working at {{free_tutor_calls}} tutor requests and {{free_roadmaps}} new paths a day, and every skill you started stays yours. Full details on the <a href="/pricing">pricing page</a>.</p>
+
+      <h2>More free guides</h2>
+      <p>{{guide_links}}</p>
+    </main>
+
+    <footer class="legal-footer">
+      <p>{{business_name}} &middot; {{support_email}}</p>
+      <nav class="legal-nav" aria-label="Footer pages">
+        <a href="/pricing">Pricing</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/contact">Contact</a>
+      </nav>
+    </footer>
+  </body>
+</html>
