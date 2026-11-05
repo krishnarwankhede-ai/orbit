@@ -82,6 +82,10 @@ async function main() {
       assert.ok(refund.body.includes(phrase), `the refund policy covers ${phrase}`);
     }
 
+    const soldPlans = `${pricing.body}${terms.body}${refund.body}`;
+    assert.ok(!soldPlans.includes("ifetime"), "no page still sells the retired lifetime plan");
+    assert.ok(!soldPlans.includes("₹1,999"), "the retired ₹1,999 price is gone from every page");
+
     const styles = await fetch(`http://127.0.0.1:${PORT}/styles.css`);
     assert.equal(styles.status, 200, "the shared stylesheet is still served");
     const css = await styles.text();

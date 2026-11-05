@@ -523,7 +523,7 @@ async function updateAIStatus() {
     if (!status.ready) pill.title = status.error || "Add an OpenRouter, Gemini, OpenAI, or Anthropic API key to the server's .env file. See README.md.";
     else pill.title = `${status.trial ? `Pro trial · ${status.trial.daysLeft} days left` : status.tier === "paid" ? "Paid plan" : "Free plan"} · ${status.model} · ${(status.providers || []).map((entry) => `${entry.provider} ${entry.model}`).join(", ")}.`;
     learnerTier = status.trial ? "Pro trial" : status.tier === "paid" ? "Paid plan" : "Free plan";
-    learnerPlanId = ["monthly", "yearly", "lifetime"].includes(status.plan) ? status.plan : "";
+    learnerPlanId = ["monthly", "yearly"].includes(status.plan) ? status.plan : "";
     trialDaysLeft = status.trial && Number.isFinite(status.trial.daysLeft) ? status.trial.daysLeft : null;
     const cap = status.limits?.monthlySkills;
     skillsLeft = typeof cap === "number" && typeof status.skillsUsed === "number"
@@ -575,7 +575,7 @@ function rupees(amount) {
 }
 
 function planNote(planId) {
-  return { monthly: "Pro monthly", yearly: "Pro yearly", lifetime: "Pro lifetime" }[planId] || "Free plan";
+  return { monthly: "Pro monthly", yearly: "Pro yearly" }[planId] || "Free plan";
 }
 
 async function confirmRazorpayPayment(response) {
@@ -589,9 +589,7 @@ async function confirmRazorpayPayment(response) {
     });
     await updateAIStatus();
     document.querySelector("#plans-dialog").close();
-    showToast(result.plan === "lifetime"
-      ? "Pro lifetime is unlocked. Your tutor is now available all day."
-      : `Pro is active until ${new Date(result.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.`);
+    showToast(`Pro is active until ${new Date(result.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.`);
   } catch (error) {
     message.textContent = `${error.message} Payment id ${response.razorpay_payment_id} — quote it if you need help.`;
   }
@@ -673,7 +671,7 @@ async function renderPlans(note) {
     copy.append(title, blurb);
     const price = document.createElement("p");
     price.className = "plan-price";
-    price.innerHTML = `<strong>${rupees(plan.amount)}</strong><small>${plan.periodDays ? ` / ${plan.periodDays} days` : " once"}</small>`;
+    price.innerHTML = `<strong>${rupees(plan.amount)}</strong><small> / ${plan.periodDays} days</small>`;
     const buy = document.createElement("button");
     buy.type = "button";
     buy.className = "button button-primary plan-buy";

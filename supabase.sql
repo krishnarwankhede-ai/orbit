@@ -21,7 +21,7 @@ grant usage on schema public to authenticated;
 create table if not exists public.learner_plan (
   user_id uuid primary key references auth.users (id) on delete cascade,
   email text,
-  plan text not null check (plan in ('monthly', 'yearly', 'lifetime')),
+  plan text not null check (plan in ('monthly', 'yearly')),
   status text not null check (status in ('active', 'past_due', 'cancelled', 'refunded')),
   provider text not null default 'razorpay',
   order_id text,

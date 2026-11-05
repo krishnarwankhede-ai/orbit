@@ -120,10 +120,10 @@ async function checkSignatureHelper() {
 
 function checkPlanRows() {
   assert.equal(activePlanFrom({ plan: "monthly", status: "active", current_period_end: new Date(Date.now() + 86_400_000).toISOString() }), "monthly");
-  assert.equal(activePlanFrom({ plan: "lifetime", status: "active", current_period_end: null }), "lifetime", "lifetime never expires");
+  assert.equal(activePlanFrom({ plan: "yearly", status: "active", current_period_end: new Date(Date.now() + 365 * 86_400_000).toISOString() }), "yearly");
   assert.equal(activePlanFrom({ plan: "monthly", status: "active", current_period_end: new Date(Date.now() - 86_400_000).toISOString() }), null, "an expired monthly plan drops back to free");
   assert.equal(activePlanFrom({ plan: "yearly", status: "past_due", current_period_end: null }), null, "a failed payment is not a plan");
-  assert.equal(activePlanFrom({ plan: "godmode", status: "active", current_period_end: null }), null, "an unknown plan id is ignored");
+  assert.equal(activePlanFrom({ plan: "lifetime", status: "active", current_period_end: null }), null, "a row for the retired lifetime plan grants nothing");
 }
 
 async function checkHttpFlow() {
@@ -132,7 +132,7 @@ async function checkHttpFlow() {
   assert.equal(plansList.payload.configured, true);
   assert.equal(plansList.payload.currentPlan, null, "a signed-out visitor is on the free plan");
   assert.equal(plansList.payload.trial, null, "a signed-out browser gets no trial - there is no account to tie it to");
-  assert.deepEqual(plansList.payload.plans.map((plan) => plan.amount), [399, 2999, 1999]);
+  assert.deepEqual(plansList.payload.plans.map((plan) => plan.amount), [399, 2999]);
   assert.equal(JSON.stringify(plansList.payload).includes(RAZORPAY_SECRET), false, "the key secret never reaches the client");
   assert.equal(plansList.payload.keyId, "rzp_test_1234567890", "the publishable key id is shared");
 
@@ -170,8 +170,8 @@ async function checkHttpFlow() {
   assert.equal(lastOrderRequest.currency, "INR", "the currency comes from the server too");
   assert.equal(lastOrderRequest.notes.user_id, USER_ID, "the order is bound to the signed-in account");
 
-  const badPlan = await request("/api/billing/checkout", { method: "POST", body: { plan: "godmode" }, cookie });
-  assert.equal(badPlan.status, 400, "an unknown plan id is refused");
+  const badPlan = await request("/api/billing/checkout", { method: "POST", body: { plan: "lifetime" }, cookie });
+  assert.equal(badPlan.status, 400, "the retired lifetime plan id cannot be ordered");
 
   const badSignature = await request("/api/billing/verify", {
     method: "POST",
@@ -200,7 +200,7 @@ async function checkHttpFlow() {
 
   const alreadyPaid = await request("/api/billing/plans", { cookie });
   assert.equal(alreadyPaid.payload.currentPlan, "monthly");
-  assert.equal(alreadyPaid.payload.plans.length, 3, "the list is still shown so the learner can see what they have");
+  assert.equal(alreadyPaid.payload.plans.length, 2, "the list is still shown so the learner can see what they have");
 }
 
 async function checkWebhook() {
@@ -212,7 +212,7 @@ async function checkWebhook() {
           id: "pay_webhook_1",
           order_id: "order_hook_1",
           status: "captured",
-          notes: { user_id: OTHER_USER_ID, plan: "lifetime", email: "hooked@orbit.test" }
+          notes: { user_id: OTHER_USER_ID, plan: "yearly", email: "hooked@orbit.test" }
         }
       }
     }
@@ -234,8 +234,9 @@ async function checkWebhook() {
     headers: { "X-Razorpay-Signature": signature(raw, WEBHOOK_SECRET) }
   });
   assert.equal(delivered.status, 200, `webhook should be handled: ${JSON.stringify(delivered.payload)}`);
-  assert.equal(plans.get(OTHER_USER_ID).plan, "lifetime");
-  assert.equal(plans.get(OTHER_USER_ID).current_period_end, null, "a lifetime grant has no period end");
+  assert.equal(plans.get(OTHER_USER_ID).plan, "yearly");
+  const webhookPeriodEnd = new Date(plans.get(OTHER_USER_ID).current_period_end).getTime();
+  assert.ok(webhookPeriodEnd - Date.now() > 364 * 86_400_000, "a yearly grant runs a full year from the payment date");
 
   const noise = await request("/api/billing/webhook", {
     method: "POST",
@@ -247,7 +248,7 @@ async function checkWebhook() {
 }
 
 async function main() {
-  assert.deepEqual(Object.keys(billingPlans), ["monthly", "yearly", "lifetime"]);
+  assert.deepEqual(Object.keys(billingPlans), ["monthly", "yearly"]);
   assert.equal(billingPlanList()[0].amountPaise, undefined, "the client list exposes rupees, not paise internals");
 
   await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));

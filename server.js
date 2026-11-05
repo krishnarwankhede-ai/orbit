@@ -239,13 +239,6 @@ const billingPlans = {
     currency: "INR",
     periodDays: 365,
     blurb: "A full year of Pro at about six months of the monthly price."
-  },
-  lifetime: {
-    label: "Pro lifetime",
-    amountPaise: 199900,
-    currency: "INR",
-    periodDays: null,
-    blurb: "Pay once, keep Pro on this account for as long as Orbit exists."
   }
 };
 
@@ -345,7 +338,7 @@ async function saveLearnerPlan(session, planId, { paymentId, orderId, status = "
     provider: "razorpay",
     order_id: orderId || null,
     payment_id: paymentId || null,
-    current_period_end: status === "active" && plan.periodDays
+    current_period_end: status === "active"
       ? new Date(Date.now() + plan.periodDays * 86_400_000).toISOString()
       : null,
     updated_at: new Date().toISOString()
@@ -1485,7 +1478,7 @@ async function handleApi(request, response, pathname) {
       provider: "razorpay",
       order_id: payment.order_id || null,
       payment_id: payment.id || null,
-      current_period_end: event.event === "payment.captured" && periodDays
+      current_period_end: event.event === "payment.captured"
         ? new Date(Date.now() + periodDays * 86_400_000).toISOString()
         : null,
       updated_at: new Date().toISOString()
@@ -1897,10 +1890,7 @@ function legalPlanRows() {
   ];
   const rows = [trial, free];
   for (const plan of Object.values(billingPlans)) {
-    const access = plan.periodDays === null
-      ? "Forever, on this account"
-      : `${plan.periodDays} days from the payment date`;
-    rows.push([plan.label, `₹${(plan.amountPaise / 100).toLocaleString("en-IN")}`, access, plan.blurb]);
+    rows.push([plan.label, `₹${(plan.amountPaise / 100).toLocaleString("en-IN")}`, `${plan.periodDays} days from the payment date`, plan.blurb]);
   }
   return rows.map((cells) => `      <tr>${cells.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("\n");
 }
@@ -1962,12 +1952,12 @@ function seoJsonLd(request) {
   const skillPhrase = freeSkillLimit === null
     ? "unlimited new skills every month"
     : `${freeSkillLimit} new skill${freeSkillLimit === 1 ? "" : "s"} a month`;
-  const offers = Object.entries(billingPlans).map(([id, plan]) => ({
+  const offers = Object.values(billingPlans).map((plan) => ({
     "@type": "Offer",
     name: plan.label,
     price: (plan.amountPaise / 100).toFixed(2),
     priceCurrency: plan.currency,
-    category: id === "lifetime" ? "one-time payment" : `${plan.periodDays}-day plan, no auto-renewal`,
+    category: `${plan.periodDays}-day plan, no auto-renewal`,
     url: `${origin}/pricing`
   }));
   const graph = [
@@ -2036,7 +2026,7 @@ function seoJsonLd(request) {
           name: "What does Orbit Pro cost?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: `${billingPlans.monthly.label} is ₹${billingPlans.monthly.amountPaise / 100} for 30 days, ${billingPlans.yearly.label} is ₹${billingPlans.yearly.amountPaise / 100} for 365 days and ${billingPlans.lifetime.label} is ₹${billingPlans.lifetime.amountPaise / 100} once. Plans do not renew automatically; each is a single payment for a fixed period.`
+            text: `${billingPlans.monthly.label} is ₹${billingPlans.monthly.amountPaise / 100} for 30 days and ${billingPlans.yearly.label} is ₹${billingPlans.yearly.amountPaise / 100} for 365 days. Plans do not renew automatically; each is a single payment for a fixed period.`
           }
         },
         {
@@ -2067,8 +2057,8 @@ function planSummary() {
   const freeSkillLimit = monthlySkillLimit("free");
   const paidSkillLimit = monthlySkillLimit("paid");
   const paidSkills = paidSkillLimit === null ? "unlimited new skills" : `${paidSkillLimit} new skills`;
-  const priced = Object.entries(billingPlans)
-    .map(([id, plan]) => `${plan.label} ₹${plan.amountPaise / 100} ${id === "lifetime" ? "once" : `for ${plan.periodDays} days`}`)
+  const priced = Object.values(billingPlans)
+    .map((plan) => `${plan.label} ₹${plan.amountPaise / 100} for ${plan.periodDays} days`)
     .join(", ");
   return `Every new account gets ${TRIAL_DAYS} days of Pro free, with no card and nothing to cancel. After that, the free plan gives ${freeSkillLimit === 1 ? "one new skill a month" : `${freeSkillLimit} new skills a month`}, ${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} learning-path generations a day. Pro (${priced}) lifts that to ${paidSkills} a month with ${dailyLimit("paid", "tutor")} tutor requests and ${dailyLimit("paid", "roadmap")} roadmaps a day. Pro is the same AI model at a higher allowance, and no plan renews by itself.`;
 }

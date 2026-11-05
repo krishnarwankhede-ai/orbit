@@ -1,6 +1,6 @@
 # Orbit — an AI tutor that plans the path, then teaches it
 
-**Live site:** <https://orbit-gs0d.onrender.com> · India · ₹399 / 30 days, ₹2,999 / 365 days, ₹1,999 lifetime
+**Live site:** <https://orbit-gs0d.onrender.com> · India · first 30 days of Pro free · ₹399 / 30 days, ₹2,999 / 365 days
 
 Orbit is a complete, running AI learning platform, not a demo. A learner says what they want to learn, how much they already know and how many minutes a day they have. Orbit's AI writes a personalised roadmap of about 40 lessons in 8 sections, then teaches it one concept at a time in a chat: explains, sets a challenge, grades the answer, scaffolds the mistake, rephrases the doubt, and only unlocks the next concept after three correct checkpoints and 80% mastery. The same tutor answers questions mid-lesson instead of going quiet.
 
@@ -153,7 +153,7 @@ Pro plans are bought inside the app and paid to your own Razorpay account. The b
 
 1. In the [Razorpay dashboard](https://dashboard.razorpay.com/app/keys), copy the **test** key id and secret. Test cards charge nothing, so you can verify the whole flow before any KYC.
 2. Add them to `.env` as `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`, then run `supabase.sql` again so the `learner_plan` table exists, and restart Orbit.
-3. In the app, open the account window → **Upgrade to Pro**. The plans window shows ₹399 / 30 days, ₹2,999 / 365 days and ₹1,999 once. Prices come from `billingPlans` in `server.js`; the client only sends a plan id, so editing the request cannot change the amount.
+3. In the app, open the account window → **Upgrade to Pro**. The plans window shows ₹399 / 30 days and ₹2,999 / 365 days. Prices come from `billingPlans` in `server.js`; the client only sends a plan id, so editing the request cannot change the amount.
 4. Razorpay's window returns a payment id and signature. `POST /api/billing/verify` recomputes the HMAC-SHA256 with your key secret, then re-reads the order and payment from Razorpay's API to confirm the order belongs to that account and the money is `captured`. Only then is the plan written and the cache dropped, so the very next AI request runs on the paid model.
 5. For production, add a Razorpay webhook pointing at `https://your-server/api/billing/webhook` with a signing secret in `RAZORPAY_WEBHOOK_SECRET`, plus `SUPABASE_SERVICE_ROLE_KEY` if you want the webhook to activate plans without the learner's browser. A webhook cannot reach `localhost`, so locally step 4 is what activates the plan.
 
