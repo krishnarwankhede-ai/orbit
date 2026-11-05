@@ -2149,7 +2149,7 @@ function serveStatic(response, pathname, request) {
     return;
   }
   const requestPath = pathname === "/" ? "/index.html" : pathname;
-  const allowedFiles = new Set(["/index.html", "/app.js", "/styles.css", "/capacitor.js", "/orbit-share.png"]);
+  const allowedFiles = new Set(["/index.html", "/app.js", "/styles.css", "/capacitor.js", "/orbit-share.png", "/favicon.png", "/favicon.ico"]);
   if (!allowedFiles.has(requestPath)) {
     jsonResponse(response, 404, { error: "Page not found." });
     return;
