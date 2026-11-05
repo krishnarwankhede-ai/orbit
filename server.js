@@ -362,6 +362,61 @@ async function saveLearnerPlan(session, planId, { paymentId, orderId, status = "
   return row;
 }
 
+// Every new account gets TRIAL_DAYS of full Pro before it is ever asked for money, once, with no
+// card. The clock starts on the learner's first signed-in request and lives in learner_trial, which
+// only the service role can write. learner_plan is deliberately not reused: its RLS lets the account
+// owner update their own row, and a starter offer must not be extendable from the browser.
+const TRIAL_DAYS = 30;
+const trialCache = new Map();
+
+function trialStateFrom(row, now = new Date()) {
+  if (!row?.started_at) return null;
+  const start = new Date(row.started_at);
+  if (Number.isNaN(start.getTime())) return null;
+  const endsAt = new Date(start.getTime() + TRIAL_DAYS * 86_400_000);
+  if (endsAt.getTime() <= now.getTime()) return null;
+  return {
+    startedAt: start.toISOString(),
+    endsAt: endsAt.toISOString(),
+    daysLeft: Math.ceil((endsAt.getTime() - now.getTime()) / 86_400_000)
+  };
+}
+
+async function getLearnerTrial(userId) {
+  const cached = trialCache.get(userId);
+  if (cached && cached.expires > Date.now()) return cached.trial;
+  const now = new Date();
+  let trial = null;
+  try {
+    const serviceKey = skillWriteKey();
+    if (!serviceKey) throw Object.assign(new Error("SUPABASE_SERVICE_ROLE_KEY is not set."), { code: "TRIAL_STORE_NOT_CONFIGURED" });
+    const query = `/rest/v1/learner_trial?select=started_at&user_id=eq.${encodeURIComponent(userId)}`;
+    const { response, payload } = await supabaseRequest(query, { serviceKey });
+    throwSupabaseError(response, payload, "Could not read your trial.", "TRIAL_READ_FAILED");
+    const rows = Array.isArray(payload) ? payload : [];
+    trial = rows.length ? trialStateFrom(rows[0], now) : await startLearnerTrial(userId, now, serviceKey);
+  } catch (error) {
+    // Missing table, missing service key or an outage: the learner keeps whatever the plan lookup
+    // gave them. Failing open here would turn one bad deploy into unlimited Pro for every account.
+    console.warn(`[orbit] trial not checked: ${error.message}`);
+    trial = null;
+  }
+  if (trialCache.size > 2000) trialCache.clear();
+  trialCache.set(userId, { expires: Date.now() + PLAN_CACHE_MS, trial });
+  return trial;
+}
+
+async function startLearnerTrial(userId, now, serviceKey) {
+  const startedAt = now.toISOString();
+  const { response, payload } = await supabaseRequest("/rest/v1/learner_trial?on_conflict=user_id", {
+    method: "POST",
+    serviceKey,
+    body: { user_id: userId, started_at: startedAt }
+  });
+  throwSupabaseError(response, payload, "Could not start your trial.", "TRIAL_WRITE_FAILED");
+  return trialStateFrom({ started_at: startedAt }, now);
+}
+
 function billingPlanList() {
   return Object.entries(billingPlans).map(([id, plan]) => ({
     id,
@@ -551,13 +606,13 @@ async function identifyLearner(request, body) {
       if (session?.user?.id) {
         const email = String(session.user.email || "").toLowerCase();
         const plan = (await getLearnerPlan(session)) || (paidEmails().has(email) ? "manual" : null);
-        return {
-          tier: plan ? "paid" : "free",
-          plan,
-          userId: session.user.id,
-          usageKey: `user:${session.user.id}`,
-          planSource: "account"
-        };
+        const identity = { userId: session.user.id, usageKey: `user:${session.user.id}` };
+        if (plan) return { ...identity, tier: "paid", plan, planSource: "account" };
+        // A trial is reported as the paid tier, so every consumer - daily limits, the skill gate, the
+        // model chain - upgrades by itself, and day 31 downgrades the same way an expired plan does.
+        const trial = await getLearnerTrial(session.user.id);
+        if (trial) return { ...identity, tier: "paid", plan: "trial", planSource: "trial", trial };
+        return { ...identity, tier: "free", plan: null, planSource: "account" };
       }
     } catch {
       // A broken account session must not block a lesson; the learner just stays on the free tier.
@@ -707,7 +762,7 @@ async function skillGate(learner, skillKey) {
 function requireAccountForSkill(learner) {
   if (!accountIsConfigured() || learner.userId) return;
   throw Object.assign(
-    new Error("Sign in free to start this skill. Your learning path and your one free skill a month are tied to your account, not to this browser."),
+    new Error("Sign in free to start this skill. A new account gets its first 30 days on Pro, and your learning path and your monthly skill allowance are tied to your account, not to this browser."),
     { status: 401, code: "ACCOUNT_REQUIRED" }
   );
 }
@@ -1294,6 +1349,7 @@ async function handleApi(request, response, pathname) {
       skillsUsed,
       plan: learner.plan,
       planSource: learner.planSource,
+      trial: learner.trial ? { daysLeft: learner.trial.daysLeft, endsAt: learner.trial.endsAt } : null,
       billingConfigured: billingIsConfigured(),
       accountConfigured: accountIsConfigured()
     });
@@ -1302,12 +1358,16 @@ async function handleApi(request, response, pathname) {
 
   if (pathname === "/api/billing/plans" && request.method === "GET") {
     const learner = await resolveLearner(request, null);
+    // currentPlan is what the client uses to hide the buy buttons, so a trial is reported beside it
+    // rather than inside it - someone on a trial must still be able to pay.
+    const trial = learner.trial ? { daysLeft: learner.trial.daysLeft, endsAt: learner.trial.endsAt } : null;
     jsonResponse(response, 200, {
       configured: billingIsConfigured(),
       keyId: billingIsConfigured() ? readEnv("RAZORPAY_KEY_ID").trim() : "",
-      currentPlan: learner.plan,
+      currentPlan: trial ? null : learner.plan,
+      trial,
       tier: learner.tier,
-      needsSignIn: learner.planSource !== "account",
+      needsSignIn: !learner.userId,
       currency: "INR",
       plans: billingPlanList()
     });
@@ -1827,7 +1887,7 @@ function legalPlanRows() {
     "Free",
     "₹0",
     "No expiry",
-    `Try Orbit before paying. The same AI tutor, ${skillLimitPhrase("free")}, ${dailyLimit("free", "tutor")} tutor requests a day and ${dailyLimit("free", "roadmap")} learning-path generations a day for the skills you have started.`
+    `What you get after the 30-day Pro trial ends: the same AI tutor, ${skillLimitPhrase("free")}, ${dailyLimit("free", "tutor")} tutor requests a day and ${dailyLimit("free", "roadmap")} learning-path generations a day for the skills you have started.`
   ];
   const rows = [free];
   for (const plan of Object.values(billingPlans)) {
@@ -1935,6 +1995,7 @@ function seoJsonLd(request) {
         "Mastery gate before the next concept unlocks",
         "Keeps every skill a learner starts, with per-skill progress",
         "Cloud-synced progress with Google sign-in",
+        `${TRIAL_DAYS} days of the full Pro allowance free on every new account`,
         `${skillPhrase} on the free plan, unlimited on Pro`,
         `${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} roadmaps a day free, ${dailyLimit("paid", "tutor")} and ${dailyLimit("paid", "roadmap")} on Pro`
       ],
@@ -1946,6 +2007,14 @@ function seoJsonLd(request) {
     {
       "@type": "FAQPage",
       mainEntity: [
+        {
+          "@type": "Question",
+          name: "Is there a free trial of Pro?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: `Yes. Every new account gets ${TRIAL_DAYS} days of the full Pro allowance at no cost, with no card and nothing to cancel afterwards. On day ${TRIAL_DAYS + 1} the account returns to the free plan and keeps every skill, path and record it already has.`
+          }
+        },
         {
           "@type": "Question",
           name: "Is Orbit free?",
@@ -1993,7 +2062,7 @@ function planSummary() {
   const priced = Object.entries(billingPlans)
     .map(([id, plan]) => `${plan.label} ₹${plan.amountPaise / 100} ${id === "lifetime" ? "once" : `for ${plan.periodDays} days`}`)
     .join(", ");
-  return `Free: ${freeSkillLimit === 1 ? "one new skill a month" : `${freeSkillLimit} new skills a month`}, ${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} learning-path generations a day. Pro (${priced}) lifts that to ${paidSkills} a month with ${dailyLimit("paid", "tutor")} tutor requests and ${dailyLimit("paid", "roadmap")} roadmaps a day. Pro is the same AI model at a higher allowance, and no plan renews by itself.`;
+  return `Every new account gets ${TRIAL_DAYS} days of Pro free, with no card and nothing to cancel. After that, the free plan gives ${freeSkillLimit === 1 ? "one new skill a month" : `${freeSkillLimit} new skills a month`}, ${dailyLimit("free", "tutor")} tutor requests and ${dailyLimit("free", "roadmap")} learning-path generations a day. Pro (${priced}) lifts that to ${paidSkills} a month with ${dailyLimit("paid", "tutor")} tutor requests and ${dailyLimit("paid", "roadmap")} roadmaps a day. Pro is the same AI model at a higher allowance, and no plan renews by itself.`;
 }
 
 function serveStatic(response, pathname, request) {
@@ -2148,6 +2217,8 @@ module.exports = {
   skillGate,
   saveSkillStart,
   requireAccountForSkill,
+  TRIAL_DAYS,
+  trialStateFrom,
   roadmapSchema,
   tutorSchema,
   briefSchema,

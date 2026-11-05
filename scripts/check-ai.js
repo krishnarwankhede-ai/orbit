@@ -14,6 +14,7 @@ process.env.AI_FALLBACK_PROVIDERS = "openai,anthropic,openrouter";
 const {
   askModel, providerChain, roadmapSchema, tutorSchema, resolveProviderModel, limitAiUsage, chargeAiUsage, dailyLimit,
   monthlySkillLimit, skillLimitPhrase, skillMonth, skillKeyOf, skillGate, saveSkillStart, requireAccountForSkill,
+  TRIAL_DAYS, trialStateFrom,
   validateBrief, validateLesson, validateDoubt, validateTutorReply, validateRoadmap, cleanAiText
 } = require("../server.js");
 
@@ -162,10 +163,11 @@ async function check() {
 
   checkUsageCaps();
   await checkSkillAllowance();
+  checkTrialClock();
   checkLessonStage();
   checkCleanOutput();
 
-  console.log("AI provider checks passed: gemini, openai, anthropic, openrouter tiers, quotas, free-plan caps and cleaned learner copy.");
+  console.log("AI provider checks passed: gemini, openai, anthropic, openrouter tiers, quotas, free-plan caps, the 30-day trial clock and cleaned learner copy.");
 }
 
 function checkCleanOutput() {
@@ -382,6 +384,24 @@ async function checkSkillAllowance() {
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_ANON_KEY;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
+// The trial is a clock, not a counter: one start date, 30 days of Pro from it, and the learner is
+// back on the free tier the moment that date passes - with no expiry column to keep in sync.
+function checkTrialClock() {
+  assert.equal(TRIAL_DAYS, 30, "a new account gets 30 days of Pro");
+  const now = new Date("2026-11-05T09:00:00Z");
+  const day = 86_400_000;
+  assert.equal(trialStateFrom(null, now), null, "no row means no trial");
+  assert.equal(trialStateFrom({ started_at: "not a date" }, now), null, "a corrupt start date grants nothing");
+  const started = trialStateFrom({ started_at: now.toISOString() }, now);
+  assert.equal(started.daysLeft, 30, "day one shows the full month");
+  assert.equal(started.endsAt, new Date(now.getTime() + 30 * day).toISOString(), "the trial ends 30 days after it starts");
+  assert.equal(trialStateFrom({ started_at: now.toISOString() }, new Date(now.getTime() + 29 * day + 1)).daysLeft, 1, "the last day still counts down");
+  assert.equal(trialStateFrom({ started_at: now.toISOString() }, new Date(now.getTime() + 15 * day)).daysLeft, 15, "the halfway read reports what is left");
+  assert.equal(trialStateFrom({ started_at: now.toISOString() }, new Date(now.getTime() + 30 * day)), null, "on day 31 the learner is free again");
+  assert.equal(dailyLimit("paid", "tutor"), 120, "a trial learner is served at the Pro allowance");
+  assert.equal(monthlySkillLimit("paid"), null, "and with no monthly skill cap");
 }
 
 async function runRoadmap() {

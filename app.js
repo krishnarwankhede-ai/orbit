@@ -124,6 +124,8 @@ let apiReady = false;
 let accountConfigured = false;
 let learnerTier = "";
 let learnerPlanId = "";
+let trialDaysLeft = null;
+let trialRecapShown = false;
 let skillsLeft = null;
 let skillGateWait = "";
 let accountUser = null;
@@ -499,6 +501,7 @@ async function updateAIStatus() {
     accountConfigured = false;
     learnerTier = "";
     learnerPlanId = "";
+    trialDaysLeft = null;
     skillsLeft = null;
     const pill = document.querySelector("#ai-status-pill");
     pill.classList.add("is-disconnected");
@@ -518,9 +521,10 @@ async function updateAIStatus() {
       ? `${status.provider} AI ready`
       : "AI key needed";
     if (!status.ready) pill.title = status.error || "Add an OpenRouter, Gemini, OpenAI, or Anthropic API key to the server's .env file. See README.md.";
-    else pill.title = `${status.tier === "paid" ? "Paid" : "Free"} plan · ${status.model} · ${(status.providers || []).map((entry) => `${entry.provider} ${entry.model}`).join(", ")}.`;
-    learnerTier = status.tier === "paid" ? "Paid plan" : "Free plan";
+    else pill.title = `${status.trial ? `Pro trial · ${status.trial.daysLeft} days left` : status.tier === "paid" ? "Paid plan" : "Free plan"} · ${status.model} · ${(status.providers || []).map((entry) => `${entry.provider} ${entry.model}`).join(", ")}.`;
+    learnerTier = status.trial ? "Pro trial" : status.tier === "paid" ? "Paid plan" : "Free plan";
     learnerPlanId = ["monthly", "yearly", "lifetime"].includes(status.plan) ? status.plan : "";
+    trialDaysLeft = status.trial && Number.isFinite(status.trial.daysLeft) ? status.trial.daysLeft : null;
     const cap = status.limits?.monthlySkills;
     skillsLeft = typeof cap === "number" && typeof status.skillsUsed === "number"
       ? Math.max(0, cap - status.skillsUsed)
@@ -535,6 +539,7 @@ async function updateAIStatus() {
     accountConfigured = false;
     learnerTier = "";
     learnerPlanId = "";
+    trialDaysLeft = null;
     skillsLeft = null;
     const pill = document.querySelector("#ai-status-pill");
     pill.classList.add("is-disconnected");
@@ -688,6 +693,65 @@ function skillNote() {
     : " · this month's free skill is started - Pro adds unlimited skills";
 }
 
+const TRIAL_RECAP_DAYS = 3;
+
+// The recap is the honest version of a countdown: every number comes from the same progress the
+// dashboard already shows. Doubts asked are not stored anywhere, so they are not counted here.
+function trialTotals() {
+  const totals = { skills: skillLibrary.skills.length, minutes: 0, xp: 0, mastered: 0, streak: 0 };
+  const activeId = skillIdentity(profile);
+  skillLibrary.skills.forEach((plan) => {
+    let saved;
+    try {
+      saved = skillIdentity(plan) === activeId ? progress : readProgressFor(plan);
+    } catch {
+      saved = null;
+    }
+    if (!saved) return;
+    totals.minutes += Number(saved.minutes) || 0;
+    totals.xp += Number(saved.xp) || 0;
+    totals.mastered += Array.isArray(saved.masteredConcepts) ? saved.masteredConcepts.length : 0;
+    totals.streak = Math.max(totals.streak, Number(saved.streak) || 0);
+  });
+  return totals;
+}
+
+function openTrialRecap(totals) {
+  document.querySelector("#trial-days").textContent = `${trialDaysLeft} ${trialDaysLeft === 1 ? "day" : "days"}`;
+  const list = document.querySelector("#trial-stats");
+  list.textContent = "";
+  // Five fixed slots, so the row count never depends on the width of a label.
+  [
+    [totals.skills, totals.skills === 1 ? "skill" : "skills"],
+    [totals.mastered, "topics"],
+    [totals.minutes, "minutes"],
+    [totals.xp, "XP"],
+    [totals.streak, "streak days"]
+  ].forEach(([value, label]) => {
+    const card = document.createElement("div");
+    card.className = "trial-stat";
+    const number = document.createElement("strong");
+    number.textContent = String(value);
+    const name = document.createElement("span");
+    name.textContent = label;
+    card.append(number, name);
+    list.appendChild(card);
+  });
+  document.querySelector("#trial-dialog").showModal();
+}
+
+// Once per visit, in the last days of the trial only. A recap of nothing done argues against paying,
+// so a trial with no study time behind it stays quiet - the countdown in the account panel still
+// tells the learner the truth.
+function maybeShowTrialRecap() {
+  if (trialRecapShown || !accountUser) return;
+  if (trialDaysLeft === null || trialDaysLeft > TRIAL_RECAP_DAYS) return;
+  const totals = trialTotals();
+  if (!totals.skills || (!totals.minutes && !totals.mastered)) return;
+  trialRecapShown = true;
+  openTrialRecap(totals);
+}
+
 function renderAccountPanel() {
   const signedIn = Boolean(accountUser);
   document.querySelector("#account-signed-in").hidden = !signedIn;
@@ -703,7 +767,11 @@ function renderAccountPanel() {
   document.querySelector(".profile-copy small").textContent = learnerTier ? `${learnerTier} · ${syncLabel}` : syncLabel;
   const planState = document.querySelector("#account-plan-state");
   if (planState) {
-    planState.textContent = `${learnerPlanId ? `Active plan: ${planNote(learnerPlanId)}` : "Active plan: Free"}${skillNote()}`;
+    planState.textContent = `${learnerPlanId
+      ? `Active plan: ${planNote(learnerPlanId)}`
+      : trialDaysLeft !== null
+        ? `Pro trial: ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+        : "Active plan: Free"}${skillNote()}`;
   }
   const upgradeButton = document.querySelector("#account-upgrade");
   if (upgradeButton) upgradeButton.hidden = Boolean(learnerPlanId);
@@ -879,6 +947,8 @@ async function initializeAccount() {
   } catch (error) {
     showToast(`Account sync could not start: ${error.message}`);
   }
+  // Last, so the recap never opens on top of the onboarding or a half-restored account.
+  maybeShowTrialRecap();
 }
 
 function cloudSnapshot() {
@@ -2501,6 +2571,20 @@ document.querySelector("#plans-dialog").addEventListener("click", (event) => {
 document.querySelector("#account-upgrade").addEventListener("click", () => {
   document.querySelector("#account-dialog").close();
   openPlansDialog();
+});
+document.querySelector("#trial-close").addEventListener("click", () => {
+  document.querySelector("#trial-dialog").close();
+});
+document.querySelector("#trial-later").addEventListener("click", () => {
+  document.querySelector("#trial-dialog").close();
+});
+document.querySelector("#trial-keep").addEventListener("click", () => {
+  const days = trialDaysLeft === null ? "" : ` Your trial runs for ${trialDaysLeft} more day${trialDaysLeft === 1 ? "" : "s"}, and a plan starts from the day you pay, so those days are not lost.`;
+  document.querySelector("#trial-dialog").close();
+  openPlansDialog(`Keep the same allowance you have had this month.${days}`);
+});
+document.querySelector("#trial-dialog").addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) event.currentTarget.close();
 });
 document.querySelectorAll("[data-account-mode]").forEach((button) => {
   button.addEventListener("click", () => setAccountMode(button.dataset.accountMode));

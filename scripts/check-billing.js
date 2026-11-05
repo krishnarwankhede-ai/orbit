@@ -30,6 +30,7 @@ const { billingPlans, billingPlanList, razorpaySignatureMatches, activePlanFrom,
 const realFetch = globalThis.fetch;
 const orders = new Map();
 const plans = new Map();
+const trials = new Map();
 let lastOrderRequest = null;
 
 function jsonResponse(payload, status = 200) {
@@ -51,6 +52,16 @@ globalThis.fetch = async (url, options = {}) => {
   }
   if (target.startsWith(`${SUPABASE_URL}/auth/v1/user`)) {
     return jsonResponse({ id: USER_ID, email: "learner@orbit.test" });
+  }
+  if (target.startsWith(`${SUPABASE_URL}/rest/v1/learner_trial?on_conflict`)) {
+    assert.equal(options.headers.Authorization, "Bearer test-service-role-key", "the trial clock is written with the service key, not the learner's token");
+    trials.set(body.user_id, { started_at: body.started_at });
+    return jsonResponse([], 201);
+  }
+  if (target.startsWith(`${SUPABASE_URL}/rest/v1/learner_trial`)) {
+    const id = decodeURIComponent(target.match(/user_id=eq\.([^&]+)/)?.[1] || "");
+    const row = trials.get(id);
+    return jsonResponse(row ? [row] : []);
   }
   if (target.startsWith(`${SUPABASE_URL}/rest/v1/learner_plan?on_conflict`)) {
     plans.set(body.user_id, { ...body });
@@ -120,6 +131,7 @@ async function checkHttpFlow() {
   assert.equal(plansList.status, 200);
   assert.equal(plansList.payload.configured, true);
   assert.equal(plansList.payload.currentPlan, null, "a signed-out visitor is on the free plan");
+  assert.equal(plansList.payload.trial, null, "a signed-out browser gets no trial - there is no account to tie it to");
   assert.deepEqual(plansList.payload.plans.map((plan) => plan.amount), [399, 2999, 1999]);
   assert.equal(JSON.stringify(plansList.payload).includes(RAZORPAY_SECRET), false, "the key secret never reaches the client");
   assert.equal(plansList.payload.keyId, "rzp_test_1234567890", "the publishable key id is shared");
@@ -133,8 +145,19 @@ async function checkHttpFlow() {
   const cookie = (login.headers.getSetCookie?.() || []).map((part) => part.split(";")[0]).join("; ");
   assert.ok(cookie.includes("orbit_access="), "login sets the session cookie");
 
-  const freeStatus = await request("/api/status", { cookie });
-  assert.equal(freeStatus.payload.tier, "free", "a signed-in learner without a row is free");
+  const trialStatus = await request("/api/status", { cookie });
+  assert.equal(trialStatus.payload.tier, "paid", "a signed-in account with no plan gets the 30-day Pro trial");
+  assert.equal(trialStatus.payload.plan, "trial");
+  assert.equal(trialStatus.payload.limits.monthlySkills, null, "the trial really removes the one-skill-a-month cap");
+  assert.equal(trialStatus.payload.limits.tutorCalls, 120, "and raises the daily allowance to Pro's");
+  assert.equal(trialStatus.payload.trial.daysLeft, 30, "day one says 30 days left");
+  assert.ok(trials.has(USER_ID), "the trial row is written on the first signed-in request");
+  assert.equal(trialStatus.payload.trial.endsAt, new Date(new Date(trials.get(USER_ID).started_at).getTime() + 30 * 86_400_000).toISOString(), "30 days from the start date");
+
+  const duringTrial = await request("/api/billing/plans", { cookie });
+  assert.equal(duringTrial.payload.currentPlan, null, "a trial is not a purchase, so it must not hide the buy buttons");
+  assert.equal(duringTrial.payload.needsSignIn, false, "a trial learner is already signed in");
+  assert.equal(duringTrial.payload.trial.daysLeft, 30, "the plans screen can show the countdown");
 
   // A crafted request that tries to buy monthly for one paisa must still be billed at the server price.
   const cheap = await request("/api/billing/checkout", {
@@ -173,6 +196,7 @@ async function checkHttpFlow() {
   const paidStatus = await request("/api/status", { cookie });
   assert.equal(paidStatus.payload.tier, "paid", "the plan flips in real time for the next request");
   assert.equal(paidStatus.payload.plan, "monthly");
+  assert.equal(paidStatus.payload.trial, null, "a real plan is never reported as a trial");
 
   const alreadyPaid = await request("/api/billing/plans", { cookie });
   assert.equal(alreadyPaid.payload.currentPlan, "monthly");

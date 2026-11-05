@@ -664,6 +664,11 @@ h1, h2, h3, p { margin-top: 0; }
 .cloud-sync-state { display: flex; justify-content: center; gap: 7px; margin: 18px 0; color: #43856e; font-size: 11px; }
 .account-signout { min-height: 40px; padding: 0 20px; border: 1px solid #e8e7ef; border-radius: 9px; background: #fff; color: #656579; cursor: pointer; }
 .plans-dialog { width: min(520px, calc(100vw - 28px)); }
+.trial-dialog { width: min(520px, calc(100vw - 28px)); }
+.trial-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; margin: 16px 0 18px; }
+.trial-stat { display: grid; gap: 2px; padding: 11px 8px; border: 1px solid #e7e6ee; border-radius: 11px; background: #fbfbff; text-align: center; }
+.trial-stat strong { color: var(--ink); font-family: Manrope, sans-serif; font-size: 19px; letter-spacing: -.4px; }
+.trial-stat span { color: #85859a; font-size: 10px; }
 .plan-list { display: grid; gap: 10px; margin-top: 6px; }
 .plan-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 14px; border: 1px solid #e7e6ee; border-radius: 12px; background: #fbfbff; }
 .plan-copy h3 { margin: 0 0 4px; color: var(--ink); font-size: 14px; }

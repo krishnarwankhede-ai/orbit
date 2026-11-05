@@ -250,12 +250,27 @@
         <span class="account-mark" aria-hidden="true">◆</span>
         <p class="eyebrow"><span class="eyebrow-dot"></span> ORBIT PRO</p>
         <h2 id="plans-title">Learn every skill you want</h2>
-        <p>The free plan teaches one new skill a month with the same tutor and a limited number of AI requests each day. Pro lifts the skill cap and almost all of the daily cap, so you can start as many skills as you like and keep learning without waiting for tomorrow.</p>
+        <p>Your account already runs on Pro for its first 30 days, free and without a card. When that ends Orbit returns to the free plan: one new skill a month and a limited number of AI requests each day, with the same tutor. Pro lifts the skill cap and almost all of the daily cap, so you can start as many skills as you like and keep learning without waiting for tomorrow.</p>
       </div>
       <div class="plan-list" id="plan-list"></div>
       <p class="plan-current" id="plan-current"></p>
       <p class="account-message" id="plans-message" role="status" aria-live="polite"></p>
       <p class="backend-help">Payment is handled by Razorpay—cards, UPI, wallets, net banking. Prices are in Indian rupees and your plan activates as soon as the payment is confirmed. Plans do not renew automatically. By paying you accept our <a class="legal-inline-link" href="/terms" target="_blank" rel="noopener">Terms</a> and the <a class="legal-inline-link" href="/refund-policy" target="_blank" rel="noopener">refund policy</a>.</p>
+    </dialog>
+    <dialog class="account-dialog trial-dialog" id="trial-dialog" aria-labelledby="trial-title">
+      <button class="account-close" id="trial-close" type="button" aria-label="Close trial summary">×</button>
+      <div class="account-dialog-heading">
+        <span class="account-mark" aria-hidden="true">◆</span>
+        <p class="eyebrow"><span class="eyebrow-dot"></span> YOUR FIRST 30 DAYS</p>
+        <h2 id="trial-title">This is what you learned on Pro</h2>
+        <p id="trial-lede">Your trial ends in <strong id="trial-days">3 days</strong>. After that Orbit goes back to the free plan: one new skill a month and a smaller number of AI requests each day. Nothing you have started is taken away.</p>
+      </div>
+      <div class="trial-stats" id="trial-stats"></div>
+      <div class="backend-actions">
+        <button class="button button-primary account-submit" id="trial-keep" type="button">Keep Pro</button>
+        <button class="backend-clear" id="trial-later" type="button">Stay on free</button>
+      </div>
+      <p class="backend-help">No card was ever asked for, so nothing charges you by itself. Keeping Pro is a payment you choose on the plans screen.</p>
     </dialog>
     <dialog class="account-dialog backend-dialog" id="backend-dialog" aria-labelledby="backend-title">
       <button class="account-close" id="backend-close" type="button" aria-label="Close server settings">×</button>
@@ -293,6 +308,10 @@
         <article>
           <h2>Skills you start stay yours</h2>
           <p>Start a skill and it keeps its own lessons, notes and progress. On the free plan the monthly limit decides only when you may start a <em>new</em> name - never what you may revisit. Reopening a skill you already own does not cost you that month.</p>
+        </article>
+        <article>
+          <h2>Your first 30 days are Pro</h2>
+          <p>A new account gets the full Pro allowance for 30 days, without a card, so you can feel the difference between one skill a month and every skill you want. On day 31 nothing is locked away: the account returns to the free plan and keeps every skill, path and record it made.</p>
         </article>
         <article>
           <h2>Plans</h2>

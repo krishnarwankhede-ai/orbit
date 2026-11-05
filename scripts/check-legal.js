@@ -18,7 +18,7 @@ process.env.ORBIT_BUSINESS_ADDRESS = "22 Sample Road, Pune 411001, India";
 process.env.ORBIT_SITE_URL = "https://orbit-review.test";
 process.env.ORBIT_LEGAL_DATE = "2 November 2026";
 
-const { server, billingPlans } = require("../server.js");
+const { server, billingPlans, TRIAL_DAYS } = require("../server.js");
 
 const PAGES = ["/pricing", "/privacy", "/terms", "/refund-policy", "/contact"];
 
@@ -56,10 +56,17 @@ async function main() {
     }
     assert.ok(pricing.body.includes("no automatic renewal"), "the pricing page is honest about renewal");
     assert.ok(pricing.body.includes("40"), "the free plan's daily tutor limit is published");
+    assert.ok(pricing.body.includes(`${TRIAL_DAYS} days of Pro, free`), "the pricing page leads with the trial");
+    assert.ok(pricing.body.includes("Is there a free trial?"), "the pricing page answers the trial question");
 
     const terms = await getPage("/terms");
     assert.ok(terms.body.includes("There is no automatic renewal"), "the terms state the real billing behaviour");
+    assert.ok(terms.body.includes("Free trial."), "the terms grant the trial and bound it to one account");
     assert.ok(terms.body.includes("/refund-policy"), "the terms point at the refund policy");
+
+    const home = await getPage("/");
+    assert.ok(home.body.includes(`${TRIAL_DAYS} days of Pro free`), "the crawlable homepage promises the same trial the server grants");
+    assert.ok(home.body.includes("free trial"), "the homepage structured data answers the trial question");
 
     const refund = await getPage("/refund-policy");
     for (const phrase of ["7 days", "5 working days", "original payment method", "Grievance redressal"]) {
