@@ -58,6 +58,15 @@ async function main() {
     assert.ok(pricing.body.includes("40"), "the free plan's daily tutor limit is published");
     assert.ok(pricing.body.includes(`${TRIAL_DAYS} days of Pro, free`), "the pricing page leads with the trial");
     assert.ok(pricing.body.includes("Is there a free trial?"), "the pricing page answers the trial question");
+    assert.ok(pricing.body.includes("<td>Pro trial</td>"), "the plans table gives the trial its own row");
+    assert.ok(
+      pricing.body.indexOf("<td>Pro trial</td>") < pricing.body.indexOf("<td>Free</td>"),
+      "the trial is the first plan in the table, ahead of Free"
+    );
+    assert.ok(
+      pricing.body.includes(`for those ${TRIAL_DAYS} days you get exactly the Pro column`),
+      "the trial is described as full Pro, not a smaller product"
+    );
 
     const terms = await getPage("/terms");
     assert.ok(terms.body.includes("There is no automatic renewal"), "the terms state the real billing behaviour");

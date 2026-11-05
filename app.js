@@ -641,7 +641,11 @@ async function renderPlans(note) {
     message.textContent = error.message;
     return;
   }
-  current.textContent = data.currentPlan ? `You are on ${planNote(data.currentPlan)}.` : "You are on the free plan.";
+  current.textContent = data.currentPlan
+    ? `You are on ${planNote(data.currentPlan)}.`
+    : data.trial
+      ? `You are on the Pro trial, with ${data.trial.daysLeft} day${data.trial.daysLeft === 1 ? "" : "s"} left.`
+      : "You are on the free plan.";
   if (!data.configured) {
     const waiting = document.createElement("p");
     waiting.className = "backend-help";

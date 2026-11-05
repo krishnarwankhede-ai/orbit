@@ -1883,13 +1883,19 @@ function siteInfo(request) {
 }
 
 function legalPlanRows() {
+  const trial = [
+    "Pro trial",
+    "₹0",
+    `${TRIAL_DAYS} days from your first sign-in`,
+    `Every new account starts here: the full Pro allowance - unlimited new skills and ${dailyLimit("paid", "tutor")} tutor requests a day. No card is asked for, and nothing charges you when it ends.`
+  ];
   const free = [
     "Free",
     "₹0",
     "No expiry",
-    `What you get after the 30-day Pro trial ends: the same AI tutor, ${skillLimitPhrase("free")}, ${dailyLimit("free", "tutor")} tutor requests a day and ${dailyLimit("free", "roadmap")} learning-path generations a day for the skills you have started.`
+    `Where day ${TRIAL_DAYS + 1} leaves you: the same AI tutor, ${skillLimitPhrase("free")}, ${dailyLimit("free", "tutor")} tutor requests a day and ${dailyLimit("free", "roadmap")} learning-path generations a day for the skills you have started.`
   ];
-  const rows = [free];
+  const rows = [trial, free];
   for (const plan of Object.values(billingPlans)) {
     const access = plan.periodDays === null
       ? "Forever, on this account"
@@ -1913,6 +1919,8 @@ function renderLegalPage(fileName, info) {
     site_url: escapeHtml(info.siteUrl),
     site_link: `<a href="${escapeHtml(info.siteUrl)}">${escapeHtml(info.siteUrl.replace(/^https?:\/\//, ""))}</a>`,
     effective_date: escapeHtml(info.effectiveDate),
+    trial_days: String(TRIAL_DAYS),
+    trial_days_plus_one: String(TRIAL_DAYS + 1),
     plan_rows: legalPlanRows(),
     free_tutor_calls: String(dailyLimit("free", "tutor")),
     free_roadmaps: String(dailyLimit("free", "roadmap")),
