@@ -76,6 +76,11 @@ async function main() {
     const home = await getPage("/");
     assert.ok(home.body.includes(`${TRIAL_DAYS} days of Pro free`), "the crawlable homepage promises the same trial the server grants");
     assert.ok(home.body.includes("free trial"), "the homepage structured data answers the trial question");
+    const homeTitle = (home.body.match(/<title>([^<]*)<\/title>/) || [])[1] || "";
+    assert.ok(/AI tutor/i.test(homeTitle), "the homepage title carries the words learners actually type, not a slogan");
+    assert.ok(homeTitle.startsWith("Orbit"), "the title leads with the brand, so brand searches match the site");
+    const homeDescription = (home.body.match(/name="description" content="([^"]*)"/) || [])[1] || "";
+    assert.ok(homeDescription.includes(`${TRIAL_DAYS} days of Pro free`), "the search snippet under the title promises the real trial");
 
     const refund = await getPage("/refund-policy");
     for (const phrase of ["7 days", "5 working days", "original payment method", "Grievance redressal"]) {
