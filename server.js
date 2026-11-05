@@ -2012,7 +2012,9 @@ function seoJsonLd(request) {
     {
       "@type": "Organization",
       "@id": `${origin}/#organization`,
-      name: site.businessName || "Orbit",
+      name: "Orbit",
+      alternateName: "Orbit AI tutor",
+      legalName: site.businessName || undefined,
       url: origin,
       logo: `${origin}/orbit-share.png`,
       email: site.supportEmail || undefined,
